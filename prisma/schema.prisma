@@ -1,0 +1,1128 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+
+// ============================================================
+// ENUMS
+// ============================================================
+
+enum UserStatus {
+  ACTIVE
+  SUSPENDED
+  DELETED
+}
+
+enum BusinessStatus {
+  ACTIVE
+  SUSPENDED
+  ARCHIVED
+}
+
+enum BusinessType {
+  INDIVIDUAL
+  SOLE_PROPRIETORSHIP
+  PARTNERSHIP
+  LLP
+  PRIVATE_LIMITED
+  PUBLIC_LIMITED
+  TRUST
+  SOCIETY
+  OTHER
+}
+
+enum BusinessMemberRole {
+  OWNER
+  ADMIN
+  ACCOUNTANT
+  MEMBER
+  VIEWER
+}
+
+enum BusinessMemberStatus {
+  INVITED
+  ACTIVE
+  SUSPENDED
+  REMOVED
+}
+
+enum BusinessAddressType {
+  REGISTERED
+  BILLING
+  SHIPPING
+  OFFICE
+}
+
+enum GstRegistrationType {
+  REGULAR
+  COMPOSITION
+  UNREGISTERED
+  OTHER
+}
+
+enum TaxMode {
+  TAX_EXCLUSIVE
+  TAX_INCLUSIVE
+}
+
+enum CustomerType {
+  INDIVIDUAL
+  BUSINESS
+}
+
+enum CustomerStatus {
+  ACTIVE
+  ARCHIVED
+}
+
+enum CustomerAddressType {
+  BILLING
+  SHIPPING
+}
+
+enum ProductType {
+  PRODUCT
+  SERVICE
+}
+
+enum ProductStatus {
+  ACTIVE
+  ARCHIVED
+}
+
+enum DiscountType {
+  PERCENTAGE
+  FIXED
+}
+
+enum InvoiceDocumentType {
+  TAX_INVOICE
+  BILL_OF_SUPPLY
+  PROFORMA
+  RECEIPT
+  CREDIT_NOTE
+  DEBIT_NOTE
+}
+
+enum InvoiceStatus {
+  DRAFT
+  ISSUED
+  SENT
+  VIEWED
+  PARTIALLY_PAID
+  PAID
+  OVERDUE
+  CANCELLED
+  VOID
+}
+
+enum PaymentMethod {
+  CASH
+  BANK_TRANSFER
+  UPI
+  CARD
+  CHEQUE
+  ONLINE
+  OTHER
+}
+
+enum PaymentStatus {
+  PENDING
+  COMPLETED
+  FAILED
+  REFUNDED
+}
+
+enum InvoiceEventType {
+  CREATED
+  UPDATED
+  ISSUED
+  SENT
+  VIEWED
+  PAYMENT_ADDED
+  PAYMENT_UPDATED
+  REMINDER_SENT
+  CANCELLED
+  VOIDED
+  PDF_GENERATED
+}
+
+enum AccountType {
+  SAVINGS
+  CURRENT
+  OTHER
+}
+
+enum SubscriptionStatus {
+  TRIALING
+  ACTIVE
+  PAST_DUE
+  PAUSED
+  CANCELLED
+  EXPIRED
+}
+
+enum BillingInterval {
+  MONTHLY
+  YEARLY
+}
+
+enum UsageMetric {
+  INVOICES_LIFETIME
+  CUSTOMERS_ACTIVE
+  PRODUCTS_ACTIVE
+}
+
+enum SubscriptionEventType {
+  CREATED
+  ACTIVATED
+  RENEWED
+  PAYMENT_SUCCESS
+  PAYMENT_FAILED
+  PLAN_CHANGED
+  PAUSED
+  RESUMED
+  CANCELLED
+  EXPIRED
+  REFUNDED
+}
+
+enum WebhookStatus {
+  RECEIVED
+  PROCESSING
+  PROCESSED
+  FAILED
+}
+
+
+// ============================================================
+// AUTHENTICATION
+// ============================================================
+
+model User {
+  id                String     @id @default(uuid()) @db.Uuid
+
+  email             String     @unique @db.VarChar(320)
+  emailVerifiedAt   DateTime?  @db.Timestamptz(6)
+
+  passwordHash      String?    @db.Text
+
+  firstName         String     @db.VarChar(100)
+  lastName          String     @db.VarChar(100)
+
+  phone             String?    @db.VarChar(30)
+  phoneVerifiedAt   DateTime?  @db.Timestamptz(6)
+
+  status            UserStatus @default(ACTIVE)
+
+  lastLoginAt       DateTime?  @db.Timestamptz(6)
+
+  createdAt         DateTime   @default(now()) @db.Timestamptz(6)
+  updatedAt         DateTime   @updatedAt @db.Timestamptz(6)
+  deletedAt         DateTime?  @db.Timestamptz(6)
+
+  profile           UserPreferences?
+  sessions          UserSession[]
+  emailVerifications EmailVerification[]
+  passwordResets    PasswordReset[]
+
+  businessMemberships BusinessMember[]
+
+  auditLogs         AuditLog[]
+
+  invoicesCreated   Invoice[]       @relation("InvoiceCreatedBy")
+  paymentsCreated   InvoicePayment[] @relation("PaymentCreatedBy")
+  invoiceEvents     InvoiceEvent[]
+  subscriptionEvents SubscriptionEvent[]
+
+  @@index([status])
+  @@index([createdAt])
+}
+
+
+model UserPreferences {
+  id                  String   @id @default(uuid()) @db.Uuid
+  userId              String   @unique @db.Uuid
+
+  language            String   @default("en-IN") @db.VarChar(10)
+  timezone            String   @default("Asia/Kolkata") @db.VarChar(50)
+
+  dateFormat          String   @default("DD/MM/YYYY") @db.VarChar(30)
+  numberFormat        String   @default("en-IN") @db.VarChar(30)
+
+  emailNotifications   Boolean  @default(true)
+  paymentNotifications Boolean  @default(true)
+  marketingEmails      Boolean  @default(false)
+
+  createdAt           DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt           DateTime @updatedAt @db.Timestamptz(6)
+
+  user                User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+
+model UserSession {
+  id             String    @id @default(uuid()) @db.Uuid
+  userId         String    @db.Uuid
+
+  tokenHash      String    @db.Text
+
+  deviceName     String?   @db.VarChar(255)
+  deviceType     String?   @db.VarChar(50)
+
+  ipAddress      String?   @db.Inet
+  userAgent      String?   @db.Text
+
+  expiresAt      DateTime  @db.Timestamptz(6)
+  lastUsedAt     DateTime  @default(now()) @db.Timestamptz(6)
+
+  revokedAt      DateTime? @db.Timestamptz(6)
+
+  createdAt      DateTime  @default(now()) @db.Timestamptz(6)
+
+  user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@index([revokedAt])
+}
+
+
+model EmailVerification {
+  id           String    @id @default(uuid()) @db.Uuid
+  userId       String    @db.Uuid
+
+  email        String    @db.VarChar(320)
+  tokenHash    String    @db.Text
+
+  expiresAt    DateTime  @db.Timestamptz(6)
+  verifiedAt   DateTime? @db.Timestamptz(6)
+
+  createdAt    DateTime  @default(now()) @db.Timestamptz(6)
+
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+
+model PasswordReset {
+  id           String    @id @default(uuid()) @db.Uuid
+  userId       String    @db.Uuid
+
+  tokenHash    String    @db.Text
+
+  expiresAt    DateTime  @db.Timestamptz(6)
+  usedAt       DateTime? @db.Timestamptz(6)
+
+  createdAt    DateTime  @default(now()) @db.Timestamptz(6)
+
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+
+// ============================================================
+// BUSINESS / TENANT
+// ============================================================
+
+model Business {
+  id              String         @id @default(uuid()) @db.Uuid
+
+  name            String         @db.VarChar(255)
+  legalName       String?        @db.VarChar(255)
+  tradeName       String?        @db.VarChar(255)
+
+  businessType    BusinessType
+
+  industry        String?        @db.VarChar(150)
+
+  email           String?        @db.VarChar(320)
+  phone           String?        @db.VarChar(30)
+  website         String?        @db.VarChar(500)
+
+  logoUrl         String?        @db.Text
+
+  countryCode     String         @default("IN") @db.Char(2)
+  currencyCode    String         @default("INR") @db.Char(3)
+  timezone        String         @default("Asia/Kolkata") @db.VarChar(50)
+
+  status          BusinessStatus @default(ACTIVE)
+
+  createdAt       DateTime       @default(now()) @db.Timestamptz(6)
+  updatedAt       DateTime       @updatedAt @db.Timestamptz(6)
+  deletedAt       DateTime?      @db.Timestamptz(6)
+
+  members         BusinessMember[]
+  addresses       BusinessAddress[]
+  taxProfile      BusinessTaxProfile?
+  bankAccounts    BusinessBankAccount[]
+  settings        BusinessSettings?
+
+  customers       Customer[]
+  products        Product[]
+
+  invoices        Invoice[]
+  invoicePayments InvoicePayment[]
+  invoiceEvents   InvoiceEvent[]
+  invoiceSequences InvoiceSequence[]
+
+  plans           Subscription[]
+  usageCounters   UsageCounter[]
+
+  auditLogs       AuditLog[]
+  webhookEvents   WebhookEvent[]
+
+  @@index([status])
+  @@index([createdAt])
+}
+
+
+model BusinessMember {
+  id           String               @id @default(uuid()) @db.Uuid
+
+  businessId   String               @db.Uuid
+  userId       String               @db.Uuid
+
+  role         BusinessMemberRole   @default(MEMBER)
+  status       BusinessMemberStatus @default(INVITED)
+
+  invitedById  String?              @db.Uuid
+
+  invitedAt    DateTime?            @db.Timestamptz(6)
+  joinedAt     DateTime?            @db.Timestamptz(6)
+
+  createdAt    DateTime             @default(now()) @db.Timestamptz(6)
+  updatedAt    DateTime             @updatedAt @db.Timestamptz(6)
+
+  business     Business             @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  user         User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([businessId, userId])
+  @@index([userId])
+  @@index([businessId, status])
+}
+
+
+model BusinessAddress {
+  id              String              @id @default(uuid()) @db.Uuid
+
+  businessId      String              @db.Uuid
+
+  type            BusinessAddressType
+
+  addressLine1    String              @db.VarChar(255)
+  addressLine2    String?             @db.VarChar(255)
+  landmark        String?             @db.VarChar(255)
+
+  city            String              @db.VarChar(100)
+  district        String?             @db.VarChar(100)
+  state           String              @db.VarChar(100)
+  stateCode       String?             @db.VarChar(10)
+
+  postalCode      String              @db.VarChar(20)
+
+  country         String              @default("India") @db.VarChar(100)
+  countryCode     String              @default("IN") @db.Char(2)
+
+  isPrimary       Boolean             @default(false)
+
+  createdAt       DateTime            @default(now()) @db.Timestamptz(6)
+  updatedAt       DateTime            @updatedAt @db.Timestamptz(6)
+
+  business        Business            @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@index([businessId])
+  @@index([businessId, type])
+}
+
+
+model BusinessTaxProfile {
+  id                     String               @id @default(uuid()) @db.Uuid
+
+  businessId             String               @unique @db.Uuid
+
+  taxCountry             String               @default("IN") @db.Char(2)
+
+  taxRegistered          Boolean              @default(false)
+
+  gstin                  String?              @db.VarChar(15)
+  gstRegistrationType    GstRegistrationType?
+
+  gstRegistrationDate    DateTime?            @db.Date
+
+  pan                    String?              @db.VarChar(10)
+  tan                    String?              @db.VarChar(10)
+
+  taxpayerName           String?              @db.VarChar(255)
+
+  defaultTaxMode         TaxMode              @default(TAX_EXCLUSIVE)
+  defaultTaxRate         Decimal?             @db.Decimal(7, 4)
+
+  placeOfSupplyStateCode String?              @db.VarChar(10)
+
+  reverseChargeEnabled   Boolean              @default(false)
+
+  createdAt              DateTime             @default(now()) @db.Timestamptz(6)
+  updatedAt              DateTime             @updatedAt @db.Timestamptz(6)
+
+  business               Business             @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@index([gstin])
+  @@index([pan])
+}
+
+
+model BusinessBankAccount {
+  id              String      @id @default(uuid()) @db.Uuid
+
+  businessId      String      @db.Uuid
+
+  accountName     String      @db.VarChar(255)
+  bankName        String      @db.VarChar(255)
+
+  accountNumber   String      @db.VarChar(100)
+  ifscCode        String      @db.VarChar(20)
+
+  branchName      String?     @db.VarChar(255)
+
+  accountType     AccountType
+
+  upiId           String?     @db.VarChar(255)
+
+  isPrimary       Boolean     @default(false)
+  showOnInvoice   Boolean     @default(true)
+
+  createdAt       DateTime    @default(now()) @db.Timestamptz(6)
+  updatedAt       DateTime    @updatedAt @db.Timestamptz(6)
+
+  business        Business    @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@index([businessId])
+}
+
+
+model BusinessSettings {
+  id                    String   @id @default(uuid()) @db.Uuid
+
+  businessId            String   @unique @db.Uuid
+
+  invoicePrefix         String   @default("INV") @db.VarChar(20)
+  invoiceStartNumber    BigInt   @default(1)
+
+  defaultDueDays        Int      @default(7)
+
+  defaultNotes          String?  @db.Text
+  defaultTerms          String?  @db.Text
+
+  defaultCurrency       String   @default("INR") @db.Char(3)
+
+  defaultTaxInclusive   Boolean  @default(false)
+
+  showLogo              Boolean  @default(true)
+  showSignature         Boolean  @default(false)
+  showBankDetails       Boolean  @default(true)
+  showPaymentDetails   Boolean  @default(true)
+
+  invoiceTemplate       String   @default("DEFAULT") @db.VarChar(50)
+
+  createdAt             DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt             DateTime @updatedAt @db.Timestamptz(6)
+
+  business              Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+}
+
+
+// ============================================================
+// CUSTOMERS
+// ============================================================
+
+model Customer {
+  id                     String         @id @default(uuid()) @db.Uuid
+
+  businessId             String         @db.Uuid
+
+  customerType           CustomerType
+  displayName            String         @db.VarChar(255)
+
+  legalName              String?        @db.VarChar(255)
+
+  firstName              String?        @db.VarChar(100)
+  lastName               String?        @db.VarChar(100)
+
+  email                  String?        @db.VarChar(320)
+  phone                  String?        @db.VarChar(30)
+  alternatePhone         String?        @db.VarChar(30)
+
+  gstin                  String?        @db.VarChar(15)
+  pan                    String?        @db.VarChar(10)
+  uin                    String?        @db.VarChar(50)
+
+  placeOfSupplyStateCode String?        @db.VarChar(10)
+
+  paymentTermsDays       Int?
+
+  notes                  String?        @db.Text
+
+  status                 CustomerStatus @default(ACTIVE)
+
+  createdAt              DateTime       @default(now()) @db.Timestamptz(6)
+  updatedAt              DateTime       @updatedAt @db.Timestamptz(6)
+  deletedAt              DateTime?      @db.Timestamptz(6)
+
+  business               Business       @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  addresses              CustomerAddress[]
+  invoices               Invoice[]
+  
+  @@index([businessId, status])
+  @@index([businessId, displayName])
+  @@index([businessId, email])
+  @@index([businessId, gstin])
+}
+
+
+model CustomerAddress {
+  id              String              @id @default(uuid()) @db.Uuid
+
+  customerId      String              @db.Uuid
+
+  type            CustomerAddressType
+
+  addressLine1    String              @db.VarChar(255)
+  addressLine2    String?             @db.VarChar(255)
+
+  city            String              @db.VarChar(100)
+  district        String?             @db.VarChar(100)
+  state           String              @db.VarChar(100)
+  stateCode       String?             @db.VarChar(10)
+
+  postalCode      String              @db.VarChar(20)
+
+  country         String              @default("India") @db.VarChar(100)
+  countryCode     String              @default("IN") @db.Char(2)
+
+  isPrimary       Boolean             @default(false)
+
+  createdAt       DateTime            @default(now()) @db.Timestamptz(6)
+  updatedAt       DateTime            @updatedAt @db.Timestamptz(6)
+
+  customer        Customer            @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@index([customerId])
+  @@index([customerId, type])
+}
+
+
+// ============================================================
+// PRODUCTS / SERVICES
+// ============================================================
+
+model Product {
+  id                    String         @id @default(uuid()) @db.Uuid
+
+  businessId            String         @db.Uuid
+
+  type                  ProductType
+
+  name                  String         @db.VarChar(255)
+  description           String?        @db.Text
+
+  sku                   String?        @db.VarChar(100)
+
+  hsnCode               String?        @db.VarChar(20)
+  sacCode               String?        @db.VarChar(20)
+
+  unit                  String         @default("unit") @db.VarChar(50)
+
+  defaultQuantity       Decimal        @default(1) @db.Decimal(18, 4)
+  unitPrice             Decimal        @db.Decimal(19, 4)
+
+  currencyCode          String         @default("INR") @db.Char(3)
+
+  defaultDiscountType   DiscountType   @default(PERCENTAGE)
+  defaultDiscountValue  Decimal        @default(0) @db.Decimal(19, 4)
+
+  defaultTaxRate        Decimal?       @db.Decimal(7, 4)
+
+  isTaxable             Boolean        @default(true)
+
+  status                ProductStatus  @default(ACTIVE)
+
+  createdAt             DateTime       @default(now()) @db.Timestamptz(6)
+  updatedAt             DateTime       @updatedAt @db.Timestamptz(6)
+  deletedAt             DateTime?      @db.Timestamptz(6)
+
+  business              Business       @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  invoiceItems          InvoiceItem[]
+
+  @@index([businessId, status])
+  @@index([businessId, name])
+  @@index([businessId, sku])
+}
+
+
+// ============================================================
+// INVOICE NUMBERING
+// ============================================================
+
+model InvoiceSequence {
+  id              String   @id @default(uuid()) @db.Uuid
+
+  businessId      String   @db.Uuid
+
+  financialYear   String   @db.VarChar(20)
+  prefix          String   @db.VarChar(20)
+
+  nextNumber      BigInt   @default(1)
+
+  createdAt       DateTime @default(now()) @db.Timestamptz(6)
+  updatedAt       DateTime @updatedAt @db.Timestamptz(6)
+
+  business        Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@unique([businessId, financialYear, prefix])
+}
+
+
+// ============================================================
+// INVOICES
+// ============================================================
+
+model Invoice {
+  id                         String              @id @default(uuid()) @db.Uuid
+
+  businessId                 String              @db.Uuid
+  customerId                 String?             @db.Uuid
+
+  invoiceNumber              String              @db.VarChar(50)
+  financialYear              String              @db.VarChar(20)
+
+  documentType               InvoiceDocumentType @default(TAX_INVOICE)
+  status                     InvoiceStatus       @default(DRAFT)
+
+  issueDate                  DateTime            @db.Date
+  dueDate                    DateTime?           @db.Date
+
+  currencyCode               String              @default("INR") @db.Char(3)
+  exchangeRate               Decimal?            @db.Decimal(19, 8)
+
+  // ----------------------------------------------------------
+  // Seller snapshot
+  // ----------------------------------------------------------
+
+  sellerName                 String              @db.VarChar(255)
+  sellerTaxName              String?             @db.VarChar(255)
+  sellerGstin                String?             @db.VarChar(15)
+  sellerPan                  String?             @db.VarChar(10)
+
+  sellerAddressSnapshot      Json
+
+  // ----------------------------------------------------------
+  // Buyer snapshot
+  // ----------------------------------------------------------
+
+  buyerName                  String              @db.VarChar(255)
+  buyerEmail                 String?             @db.VarChar(320)
+  buyerPhone                 String?             @db.VarChar(30)
+  buyerGstin                 String?             @db.VarChar(15)
+  buyerPan                   String?             @db.VarChar(10)
+
+  buyerAddressSnapshot       Json
+  shippingAddressSnapshot    Json?
+
+  placeOfSupplyStateCode     String?             @db.VarChar(10)
+
+  isReverseCharge            Boolean             @default(false)
+
+  // ----------------------------------------------------------
+  // Financials
+  // ----------------------------------------------------------
+
+  subtotal                   Decimal             @db.Decimal(19, 4)
+  discountTotal              Decimal             @default(0) @db.Decimal(19, 4)
+
+  taxableAmount              Decimal             @db.Decimal(19, 4)
+
+  cgstAmount                 Decimal             @default(0) @db.Decimal(19, 4)
+  sgstAmount                 Decimal             @default(0) @db.Decimal(19, 4)
+  igstAmount                 Decimal             @default(0) @db.Decimal(19, 4)
+  cessAmount                 Decimal             @default(0) @db.Decimal(19, 4)
+
+  taxAmount                  Decimal             @default(0) @db.Decimal(19, 4)
+
+  shippingAmount             Decimal             @default(0) @db.Decimal(19, 4)
+  otherCharges               Decimal             @default(0) @db.Decimal(19, 4)
+
+  roundingAdjustment         Decimal             @default(0) @db.Decimal(19, 4)
+
+  totalAmount                Decimal             @db.Decimal(19, 4)
+  amountPaid                 Decimal             @default(0) @db.Decimal(19, 4)
+  amountDue                  Decimal             @db.Decimal(19, 4)
+
+  // ----------------------------------------------------------
+  // Additional information
+  // ----------------------------------------------------------
+
+  notes                      String?             @db.Text
+  terms                      String?             @db.Text
+  paymentInstructions        String?             @db.Text
+
+  signatureUrl               String?             @db.Text
+  pdfUrl                     String?             @db.Text
+
+  // ----------------------------------------------------------
+  // Lifecycle
+  // ----------------------------------------------------------
+
+  issuedAt                   DateTime?           @db.Timestamptz(6)
+  sentAt                     DateTime?           @db.Timestamptz(6)
+  viewedAt                   DateTime?           @db.Timestamptz(6)
+  paidAt                     DateTime?           @db.Timestamptz(6)
+  cancelledAt                DateTime?           @db.Timestamptz(6)
+
+  createdById                String              @db.Uuid
+
+  createdAt                  DateTime            @default(now()) @db.Timestamptz(6)
+  updatedAt                  DateTime            @updatedAt @db.Timestamptz(6)
+
+  // ----------------------------------------------------------
+  // Relations
+  // ----------------------------------------------------------
+
+  business                   Business            @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  customer                   Customer?           @relation(fields: [customerId], references: [id], onDelete: SetNull)
+
+  createdBy                  User                @relation("InvoiceCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+
+  items                      InvoiceItem[]
+  payments                   InvoicePayment[]
+  events                     InvoiceEvent[]
+
+  @@unique([businessId, invoiceNumber])
+
+  @@index([businessId, status])
+  @@index([businessId, issueDate])
+  @@index([businessId, dueDate])
+  @@index([businessId, customerId])
+  @@index([businessId, createdAt])
+  @@index([customerId])
+}
+
+
+model InvoiceItem {
+  id                    String        @id @default(uuid()) @db.Uuid
+
+  invoiceId             String        @db.Uuid
+  productId             String?       @db.Uuid
+
+  type                  ProductType
+
+  description           String        @db.Text
+
+  sku                   String?       @db.VarChar(100)
+
+  hsnCode               String?       @db.VarChar(20)
+  sacCode               String?       @db.VarChar(20)
+
+  unit                  String        @db.VarChar(50)
+
+  quantity              Decimal       @db.Decimal(18, 4)
+  unitPrice             Decimal       @db.Decimal(19, 4)
+
+  discountType          DiscountType @default(PERCENTAGE)
+  discountValue         Decimal       @default(0) @db.Decimal(19, 4)
+  discountAmount        Decimal       @default(0) @db.Decimal(19, 4)
+
+  taxableAmount         Decimal       @db.Decimal(19, 4)
+
+  taxRate               Decimal       @default(0) @db.Decimal(7, 4)
+
+  cgstRate              Decimal       @default(0) @db.Decimal(7, 4)
+  cgstAmount            Decimal       @default(0) @db.Decimal(19, 4)
+
+  sgstRate              Decimal       @default(0) @db.Decimal(7, 4)
+  sgstAmount            Decimal       @default(0) @db.Decimal(19, 4)
+
+  igstRate              Decimal       @default(0) @db.Decimal(7, 4)
+  igstAmount            Decimal       @default(0) @db.Decimal(19, 4)
+
+  cessRate              Decimal       @default(0) @db.Decimal(7, 4)
+  cessAmount            Decimal       @default(0) @db.Decimal(19, 4)
+
+  lineTotal              Decimal       @db.Decimal(19, 4)
+
+  sortOrder              Int
+
+  createdAt              DateTime      @default(now()) @db.Timestamptz(6)
+  updatedAt              DateTime      @updatedAt @db.Timestamptz(6)
+
+  invoice                Invoice       @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  product                Product?      @relation(fields: [productId], references: [id], onDelete: SetNull)
+
+  @@index([invoiceId, sortOrder])
+  @@index([productId])
+}
+
+
+model InvoicePayment {
+  id                  String        @id @default(uuid()) @db.Uuid
+
+  businessId          String        @db.Uuid
+  invoiceId           String        @db.Uuid
+
+  amount              Decimal       @db.Decimal(19, 4)
+
+  paymentDate         DateTime      @db.Date
+
+  paymentMethod       PaymentMethod
+  referenceNumber     String?       @db.VarChar(255)
+
+  notes               String?       @db.Text
+
+  status              PaymentStatus @default(COMPLETED)
+
+  createdById         String        @db.Uuid
+
+  createdAt           DateTime      @default(now()) @db.Timestamptz(6)
+  updatedAt           DateTime      @updatedAt @db.Timestamptz(6)
+
+  business            Business      @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  invoice             Invoice       @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  createdBy           User          @relation("PaymentCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+
+  @@index([businessId, paymentDate])
+  @@index([businessId, invoiceId])
+  @@index([invoiceId])
+}
+
+
+model InvoiceEvent {
+  id              String           @id @default(uuid()) @db.Uuid
+
+  invoiceId       String           @db.Uuid
+  businessId      String           @db.Uuid
+
+  eventType       InvoiceEventType
+
+  actorUserId     String?          @db.Uuid
+
+  metadata        Json?
+
+  createdAt       DateTime         @default(now()) @db.Timestamptz(6)
+
+  invoice         Invoice          @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  business        Business         @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  actor           User?            @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
+
+  @@index([invoiceId, createdAt])
+  @@index([businessId, createdAt])
+}
+
+
+// ============================================================
+// SUBSCRIPTIONS / PLANS
+// ============================================================
+
+model Plan {
+  id                  String          @id @default(uuid()) @db.Uuid
+
+  code                String          @unique @db.VarChar(50)
+  name                String          @db.VarChar(100)
+
+  description         String?         @db.Text
+
+  price               Decimal         @db.Decimal(19, 4)
+  currencyCode        String          @default("INR") @db.Char(3)
+
+  billingInterval     BillingInterval
+
+  provider            String?         @db.VarChar(50)
+  providerPlanId      String?         @db.VarChar(255)
+
+  isFree              Boolean         @default(false)
+  isActive             Boolean        @default(true)
+
+  createdAt           DateTime        @default(now()) @db.Timestamptz(6)
+  updatedAt           DateTime        @updatedAt @db.Timestamptz(6)
+
+  entitlements        PlanEntitlement[]
+  subscriptions       Subscription[]
+}
+
+
+model PlanEntitlement {
+  id              String        @id @default(uuid()) @db.Uuid
+
+  planId          String        @db.Uuid
+
+  feature         String        @db.VarChar(100)
+
+  limitValue      BigInt?
+  isUnlimited     Boolean       @default(false)
+  isEnabled       Boolean       @default(true)
+
+  createdAt       DateTime      @default(now()) @db.Timestamptz(6)
+  updatedAt       DateTime      @updatedAt @db.Timestamptz(6)
+
+  plan            Plan          @relation(fields: [planId], references: [id], onDelete: Cascade)
+
+  @@unique([planId, feature])
+  @@index([planId])
+}
+
+
+model Subscription {
+  id                       String             @id @default(uuid()) @db.Uuid
+
+  businessId               String             @db.Uuid
+  planId                   String             @db.Uuid
+
+  status                   SubscriptionStatus @default(ACTIVE)
+
+  provider                 String             @db.VarChar(50)
+  providerCustomerId       String?            @db.VarChar(255)
+  providerSubscriptionId   String?            @db.VarChar(255)
+
+  currentPeriodStart      DateTime            @db.Date
+  currentPeriodEnd        DateTime            @db.Date
+
+  cancelAtPeriodEnd       Boolean             @default(false)
+
+  cancelledAt             DateTime?           @db.Timestamptz(6)
+  endedAt                 DateTime?           @db.Timestamptz(6)
+
+  createdAt               DateTime            @default(now()) @db.Timestamptz(6)
+  updatedAt               DateTime            @updatedAt @db.Timestamptz(6)
+
+  business                Business            @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  plan                    Plan                @relation(fields: [planId], references: [id], onDelete: Restrict)
+
+  events                  SubscriptionEvent[]
+
+  @@index([businessId, status])
+  @@index([planId])
+  @@index([providerCustomerId])
+  @@index([providerSubscriptionId])
+}
+
+
+model SubscriptionEvent {
+  id              String                @id @default(uuid()) @db.Uuid
+
+  subscriptionId  String                @db.Uuid
+  userId          String?               @db.Uuid
+
+  eventType       SubscriptionEventType
+
+  metadata        Json?
+
+  createdAt       DateTime              @default(now()) @db.Timestamptz(6)
+
+  subscription    Subscription          @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  user            User?                 @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([subscriptionId, createdAt])
+  @@index([userId])
+}
+
+
+// ============================================================
+// USAGE / LIMITS
+// ============================================================
+
+model UsageCounter {
+  id              String       @id @default(uuid()) @db.Uuid
+
+  businessId      String       @db.Uuid
+
+  metric          UsageMetric
+
+  periodStart     DateTime?    @db.Date
+  periodEnd       DateTime?    @db.Date
+
+  usedCount       BigInt       @default(0)
+
+  createdAt       DateTime     @default(now()) @db.Timestamptz(6)
+  updatedAt       DateTime     @updatedAt @db.Timestamptz(6)
+
+  business        Business     @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@unique([businessId, metric])
+  @@index([businessId])
+}
+
+
+// ============================================================
+// AUDIT
+// ============================================================
+
+model AuditLog {
+  id              String       @id @default(uuid()) @db.Uuid
+
+  businessId      String?      @db.Uuid
+  userId          String?      @db.Uuid
+
+  action          String       @db.VarChar(100)
+
+  entityType      String       @db.VarChar(100)
+  entityId        String?      @db.Uuid
+
+  oldValues       Json?
+  newValues       Json?
+
+  ipAddress       String?      @db.Inet
+  userAgent       String?      @db.Text
+
+  createdAt       DateTime     @default(now()) @db.Timestamptz(6)
+
+  business        Business?    @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  user            User?        @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([businessId, createdAt])
+  @@index([userId, createdAt])
+  @@index([entityType, entityId])
+  @@index([action, createdAt])
+}
+
+
+// ============================================================
+// WEBHOOKS
+// ============================================================
+
+model WebhookEvent {
+  id              String         @id @default(uuid()) @db.Uuid
+
+  businessId      String?        @db.Uuid
+
+  provider        String         @db.VarChar(50)
+  eventId         String         @db.VarChar(255)
+  eventType       String         @db.VarChar(255)
+
+  payload         Json
+
+  status          WebhookStatus  @default(RECEIVED)
+
+  attempts        Int            @default(0)
+
+  processedAt     DateTime?      @db.Timestamptz(6)
+  lastError       String?        @db.Text
+
+  createdAt       DateTime       @default(now()) @db.Timestamptz(6)
+  updatedAt       DateTime       @updatedAt @db.Timestamptz(6)
+
+  business        Business?      @relation(fields: [businessId], references: [id], onDelete: SetNull)
+
+  @@unique([provider, eventId])
+  @@index([businessId, createdAt])
+  @@index([status, createdAt])
+}

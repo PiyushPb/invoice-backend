@@ -1,0 +1,43 @@
+meta {
+  name: Register
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{baseUrl}}/auth/register
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+    "firstName": "{{firstName}}",
+    "lastName": "{{lastName}}",
+    "email": "{{email}}",
+    "password": "{{password}}",
+    "business": {
+      "name": "{{businessName}}",
+      "businessType": "{{businessType}}",
+      "countryCode": "{{countryCode}}",
+      "currencyCode": "{{currencyCode}}"
+    }
+  }
+}
+
+script:post-response {
+  if (res.getStatus() === 201 || res.getStatus() === 200) {
+    const data = res.getBody();
+    if (data && data.data && data.data.tokens) {
+      const { accessToken, refreshToken } = data.data.tokens;
+      if (accessToken) {
+        bru.setVar("accessToken", accessToken);
+        bru.setEnvVar("accessToken", accessToken);
+      }
+      if (refreshToken) {
+        bru.setVar("refreshToken", refreshToken);
+        bru.setEnvVar("refreshToken", refreshToken);
+      }
+    }
+  }
+}
