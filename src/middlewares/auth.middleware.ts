@@ -36,3 +36,25 @@ export const authenticate = (
     throw new UnauthorizedError("Invalid or expired authentication token");
   }
 };
+
+/**
+ * Middleware that extracts and verifies JWT if present, without blocking unauthenticated requests
+ */
+export const optionalAuthenticate = (
+  req: Request,
+  _res: Response,
+  next: NextFunction
+): void => {
+  const authHeader = req.headers.authorization;
+  if (authHeader && authHeader.startsWith("Bearer ")) {
+    const token = authHeader.split(" ")[1]?.trim();
+    if (token) {
+      try {
+        req.user = verifyAccessToken(token);
+      } catch {
+        // Token is invalid/expired; continue without user session
+      }
+    }
+  }
+  next();
+};

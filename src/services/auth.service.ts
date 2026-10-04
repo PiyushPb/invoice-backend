@@ -1,7 +1,8 @@
 import crypto from "node:crypto";
 import { prisma } from "../config/prisma.js";
 import { comparePassword, hashPassword } from "../utils/password.utils.js";
-import { generateAuthTokens } from "../utils/jwt.utils.js";
+import { generateAuthTokens, verifyRefreshToken } from "../utils/jwt.utils.js";
+import { config } from "../config/env.js";
 import {
   BadRequestError,
   ConflictError,
@@ -10,6 +11,8 @@ import {
   UnauthorizedError,
 } from "../utils/errors.js";
 import type { LoginInput, RegisterInput } from "../validators/auth.validator.js";
+import type { DeviceInfo } from "../utils/device.utils.js";
+import { SessionService, type SessionSummary } from "./session.service.js";
 import {
   BillingInterval,
   BusinessMemberRole,
@@ -51,12 +54,7 @@ export interface RegisterResult {
     accessToken: string;
     refreshToken: string;
   };
-}
-
-export interface LoginMetadata {
-  ipAddress?: string | null;
-  userAgent?: string | null;
-  deviceName?: string | null;
+  session: SessionSummary;
 }
 
 export interface LoginResult {
@@ -75,19 +73,14 @@ export interface LoginResult {
     accessToken: string;
     refreshToken: string;
   };
-}
-
-function sanitizeIp(ip?: string | null): string | null {
-  if (!ip) return null;
-  const clean = ip.startsWith("::ffff:") ? ip.replace("::ffff:", "") : ip;
-  if (clean === "::1" || clean === "127.0.0.1") return clean;
-  const isIpv4 = /^(\d{1,3}\.){3}\d{1,3}$/.test(clean);
-  const isIpv6 = /^([0-9a-fA-F]{0,4}:){2,7}[0-9a-fA-F]{0,4}$/.test(clean);
-  return isIpv4 || isIpv6 ? clean : null;
+  session: SessionSummary;
 }
 
 export class AuthService {
-  public static async register(input: RegisterInput): Promise<RegisterResult> {
+  public static async register(
+    input: RegisterInput,
+    deviceInfo: DeviceInfo
+  ): Promise<RegisterResult> {
     const existingUser = await prisma.user.findUnique({
       where: { email: input.email },
     });
@@ -224,15 +217,23 @@ export class AuthService {
         ],
       });
 
-      return { user, business };
-    });
+      // 9. Generate JWT Tokens
+      const tokens = generateAuthTokens({
+        userId: user.id,
+        email: user.email,
+        role: BusinessMemberRole.OWNER,
+        businessId: business.id,
+      });
 
-    // Generate JWT Tokens
-    const tokens = generateAuthTokens({
-      userId: result.user.id,
-      email: result.user.email,
-      role: BusinessMemberRole.OWNER,
-      businessId: result.business.id,
+      // 10. Create Session with LRU Max 5 constraint atomically
+      const session = await SessionService.createSession(
+        user.id,
+        tokens.refreshToken,
+        deviceInfo,
+        tx
+      );
+
+      return { user, business, tokens, session };
     });
 
     return {
@@ -252,7 +253,8 @@ export class AuthService {
         currencyCode: result.business.currencyCode,
         role: BusinessMemberRole.OWNER,
       },
-      tokens,
+      tokens: result.tokens,
+      session: result.session,
     };
   }
 
@@ -261,7 +263,7 @@ export class AuthService {
    */
   public static async login(
     input: LoginInput,
-    metadata?: LoginMetadata
+    deviceInfo: DeviceInfo
   ): Promise<LoginResult> {
     const user = await prisma.user.findFirst({
       where: {
@@ -344,28 +346,12 @@ export class AuthService {
       data: { lastLoginAt: now },
     });
 
-    // Record session tracking (non-blocking)
-    try {
-      const tokenHash = crypto
-        .createHash("sha256")
-        .update(tokens.refreshToken)
-        .digest("hex");
-      const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
-      const sanitizedIp = sanitizeIp(metadata?.ipAddress);
-
-      await prisma.userSession.create({
-        data: {
-          userId: user.id,
-          tokenHash,
-          ipAddress: sanitizedIp,
-          userAgent: metadata?.userAgent ? metadata.userAgent.slice(0, 1000) : null,
-          deviceName: metadata?.deviceName || null,
-          expiresAt,
-        },
-      });
-    } catch (sessionErr) {
-      console.warn("[AuthService] Warning: Failed to record user session:", sessionErr);
-    }
+    // Create session enforcing MAX 5 active sessions via LRU eviction
+    const session = await SessionService.createSession(
+      user.id,
+      tokens.refreshToken,
+      deviceInfo
+    );
 
     return {
       user: {
@@ -389,6 +375,7 @@ export class AuthService {
         : null,
       businesses: availableBusinesses,
       tokens,
+      session,
     };
   }
 
@@ -461,5 +448,302 @@ export class AuthService {
         role: m.role,
       })),
     };
+  }
+
+  /**
+   * Rotate refresh token and issue new access token
+   */
+  public static async refreshToken(
+    oldRefreshToken: string,
+    deviceInfo: DeviceInfo
+  ): Promise<{
+    tokens: { accessToken: string; refreshToken: string };
+    session: SessionSummary;
+  }> {
+    let payload;
+    try {
+      payload = verifyRefreshToken(oldRefreshToken);
+    } catch {
+      throw new UnauthorizedError("Invalid or expired refresh token");
+    }
+
+    const user = await prisma.user.findFirst({
+      where: {
+        id: payload.userId,
+        deletedAt: null,
+      },
+      include: {
+        businessMemberships: {
+          where: {
+            status: BusinessMemberStatus.ACTIVE,
+            business: {
+              status: BusinessStatus.ACTIVE,
+              deletedAt: null,
+            },
+          },
+          orderBy: {
+            createdAt: "asc",
+          },
+        },
+      },
+    });
+
+    if (!user) {
+      throw new UnauthorizedError("User account not found");
+    }
+
+    if (user.status === UserStatus.SUSPENDED) {
+      throw new ForbiddenError(
+        "Your account has been suspended. Please contact support."
+      );
+    }
+
+    const activeMembership =
+      user.businessMemberships.find((m) => m.role === BusinessMemberRole.OWNER) ||
+      user.businessMemberships.find((m) => m.role === BusinessMemberRole.ADMIN) ||
+      user.businessMemberships[0] ||
+      null;
+
+    const newTokens = generateAuthTokens({
+      userId: user.id,
+      email: user.email,
+      role: activeMembership?.role,
+      businessId: activeMembership?.businessId,
+    });
+
+    const updatedSession = await SessionService.rotateSession(
+      oldRefreshToken,
+      newTokens.refreshToken,
+      deviceInfo
+    );
+
+    if (!updatedSession) {
+      // Possible token replay: revoke all sessions for safety
+      await SessionService.revokeAllSessions(user.id);
+      throw new UnauthorizedError(
+        "Session is invalid or already rotated. Please log in again."
+      );
+    }
+
+    return {
+      tokens: newTokens,
+      session: updatedSession,
+    };
+  }
+
+  /**
+   * Logout user by revoking current session
+   */
+  public static async logout(
+    refreshToken?: string,
+    userId?: string
+  ): Promise<boolean> {
+    if (refreshToken) {
+      return SessionService.revokeSessionByRefreshToken(refreshToken);
+    }
+
+    if (userId) {
+      const activeSessions = await SessionService.getUserActiveSessions(userId);
+      if (activeSessions.length > 0 && activeSessions[0]) {
+        return SessionService.revokeSession(userId, activeSessions[0].id);
+      }
+    }
+
+    return true;
+  }
+
+  /**
+   * Logout user from all devices by revoking all active sessions
+   */
+  public static async logoutAll(userId: string): Promise<number> {
+    return SessionService.revokeAllSessions(userId);
+  }
+
+  /**
+   * Verify user email using token
+   */
+  public static async verifyEmail(token: string): Promise<boolean> {
+    const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
+    const now = new Date();
+
+    const verification = await prisma.emailVerification.findFirst({
+      where: {
+        tokenHash,
+        verifiedAt: null,
+        expiresAt: { gt: now },
+      },
+    });
+
+    if (!verification) {
+      throw new BadRequestError("Invalid or expired email verification token");
+    }
+
+    await prisma.$transaction(async (tx) => {
+      await tx.emailVerification.update({
+        where: { id: verification.id },
+        data: { verifiedAt: now },
+      });
+
+      await tx.user.update({
+        where: { id: verification.userId },
+        data: { emailVerifiedAt: now },
+      });
+    });
+
+    return true;
+  }
+
+  /**
+   * Resend verification email token
+   */
+  public static async resendVerification(email: string): Promise<{
+    message: string;
+    previewToken?: string;
+  }> {
+    const user = await prisma.user.findFirst({
+      where: {
+        email: email.toLowerCase(),
+        deletedAt: null,
+      },
+    });
+
+    if (!user) {
+      return {
+        message:
+          "If an account with this email exists, verification instructions have been sent.",
+      };
+    }
+
+    if (user.emailVerifiedAt) {
+      return {
+        message: "Email is already verified.",
+      };
+    }
+
+    // Invalidate existing pending tokens
+    await prisma.emailVerification.deleteMany({
+      where: {
+        userId: user.id,
+        verifiedAt: null,
+      },
+    });
+
+    const rawToken = crypto.randomBytes(32).toString("hex");
+    const tokenHash = crypto.createHash("sha256").update(rawToken).digest("hex");
+    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
+
+    await prisma.emailVerification.create({
+      data: {
+        userId: user.id,
+        email: user.email,
+        tokenHash,
+        expiresAt,
+      },
+    });
+
+    return {
+      message: "Verification email sent successfully.",
+      ...(config.nodeEnv !== "production" ? { previewToken: rawToken } : {}),
+    };
+  }
+
+  /**
+   * Generate password reset token
+   */
+  public static async forgotPassword(email: string): Promise<{
+    message: string;
+    previewToken?: string;
+  }> {
+    const user = await prisma.user.findFirst({
+      where: {
+        email: email.toLowerCase(),
+        deletedAt: null,
+      },
+    });
+
+    if (!user) {
+      return {
+        message:
+          "If an account with that email exists, password reset instructions have been sent.",
+      };
+    }
+
+    // Invalidate existing unused reset tokens
+    await prisma.passwordReset.updateMany({
+      where: {
+        userId: user.id,
+        usedAt: null,
+      },
+      data: {
+        usedAt: new Date(),
+      },
+    });
+
+    const rawToken = crypto.randomBytes(32).toString("hex");
+    const tokenHash = crypto.createHash("sha256").update(rawToken).digest("hex");
+    const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
+
+    await prisma.passwordReset.create({
+      data: {
+        userId: user.id,
+        tokenHash,
+        expiresAt,
+      },
+    });
+
+    return {
+      message: "Password reset instructions sent successfully.",
+      ...(config.nodeEnv !== "production" ? { previewToken: rawToken } : {}),
+    };
+  }
+
+  /**
+   * Reset user password using token and revoke all existing sessions
+   */
+  public static async resetPassword(
+    token: string,
+    newPassword: string
+  ): Promise<boolean> {
+    const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
+    const now = new Date();
+
+    const resetRecord = await prisma.passwordReset.findFirst({
+      where: {
+        tokenHash,
+        usedAt: null,
+        expiresAt: { gt: now },
+      },
+    });
+
+    if (!resetRecord) {
+      throw new BadRequestError("Invalid or expired password reset token");
+    }
+
+    const hashedPassword = await hashPassword(newPassword);
+
+    await prisma.$transaction(async (tx) => {
+      await tx.passwordReset.update({
+        where: { id: resetRecord.id },
+        data: { usedAt: now },
+      });
+
+      await tx.user.update({
+        where: { id: resetRecord.userId },
+        data: { passwordHash: hashedPassword },
+      });
+
+      // Revoke all sessions on password reset for security
+      await tx.userSession.updateMany({
+        where: {
+          userId: resetRecord.userId,
+          revokedAt: null,
+        },
+        data: {
+          revokedAt: now,
+        },
+      });
+    });
+
+    return true;
   }
 }
