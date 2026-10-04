@@ -12,7 +12,7 @@ import {
 import { AuthService } from "../services/auth.service.js";
 import { SessionService } from "../services/session.service.js";
 import { parseDeviceInfo } from "../utils/device.utils.js";
-import { NotFoundError } from "../utils/errors.js";
+import { BadRequestError, NotFoundError } from "../utils/errors.js";
 
 export class AuthController {
   /**
@@ -224,28 +224,6 @@ export class AuthController {
   }
 
   /**
-   * Return authenticated user profile and permissions
-   */
-  public static async getMe(
-    req: Request,
-    res: Response,
-    next: NextFunction
-  ): Promise<void> {
-    try {
-      const userId = req.user!.userId;
-      const result = await AuthService.getMe(userId);
-
-      res.status(200).json({
-        success: true,
-        message: "User profile retrieved successfully",
-        data: result,
-      });
-    } catch (error) {
-      next(error);
-    }
-  }
-
-  /**
    * Return active sessions for the current user (max 5)
    */
   public static async getSessions(
@@ -282,6 +260,14 @@ export class AuthController {
     try {
       const userId = req.user!.userId;
       const sessionId = req.params["sessionId"] as string;
+
+      const uuidRegex =
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+      if (!sessionId || !uuidRegex.test(sessionId)) {
+        throw new BadRequestError(
+          "Invalid session ID format. Must be a valid UUID."
+        );
+      }
 
       const revoked = await SessionService.revokeSession(userId, sessionId);
       if (!revoked) {

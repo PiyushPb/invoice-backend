@@ -26,7 +26,6 @@ router.post("/reset-password", AuthController.resetPassword);
 // ==========================================
 // Protected Routes (Require Bearer Token)
 // ==========================================
-router.get("/me", authenticate, AuthController.getMe);
 router.post("/logout-all", authenticate, AuthController.logoutAll);
 
 // Session Management
