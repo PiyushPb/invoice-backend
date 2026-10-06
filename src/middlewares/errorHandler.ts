@@ -23,7 +23,20 @@ export function errorHandler(
     return;
   }
 
-  // 2. Operational Application Errors (e.g. ConflictError, NotFoundError)
+  // 2. Body Parser JSON Syntax Errors (Malformed request JSON)
+  if (
+    err instanceof SyntaxError &&
+    "status" in err &&
+    (err as { status: number }).status === 400
+  ) {
+    res.status(400).json({
+      success: false,
+      message: "Malformed JSON payload in request body",
+    });
+    return;
+  }
+
+  // 3. Operational Application Errors (e.g. ConflictError, NotFoundError)
   if (err instanceof AppError) {
     res.status(err.statusCode).json({
       success: false,
