@@ -1,0 +1,27 @@
+meta {
+  name: Update Preferences
+  type: http
+  seq: 15
+}
+
+patch {
+  url: {{baseUrl}}/me/preferences
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+
+body:json {
+  {
+    "language": "en-IN",
+    "timezone": "Asia/Kolkata",
+    "dateFormat": "DD/MM/YYYY",
+    "numberFormat": "en-IN",
+    "emailNotifications": true,
+    "paymentNotifications": true,
+    "marketingEmails": false
+  }
+}

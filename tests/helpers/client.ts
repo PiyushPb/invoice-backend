@@ -71,13 +71,42 @@ export const api = {
     });
   },
 
-  delete: <T = unknown>(
+  patch: <T = unknown>(
     endpoint: string,
+    data?: unknown,
     headers: Record<string, string> = {}
   ): Promise<HttpResponse<T>> => {
     return executeRequest<T>({
+      method: "PATCH",
+      url: endpoint.startsWith("/") ? endpoint : `${API_PREFIX}/${endpoint}`,
+      data,
+      headers,
+    });
+  },
+
+  delete: <T = unknown>(
+    endpoint: string,
+    dataOrHeaders?: unknown,
+    maybeHeaders?: Record<string, string>
+  ): Promise<HttpResponse<T>> => {
+    let data: unknown = undefined;
+    let headers: Record<string, string> = {};
+
+    if (maybeHeaders !== undefined) {
+      data = dataOrHeaders;
+      headers = maybeHeaders;
+    } else if (dataOrHeaders && typeof dataOrHeaders === "object") {
+      if ("Authorization" in (dataOrHeaders as Record<string, unknown>)) {
+        headers = dataOrHeaders as Record<string, string>;
+      } else {
+        data = dataOrHeaders;
+      }
+    }
+
+    return executeRequest<T>({
       method: "DELETE",
       url: endpoint.startsWith("/") ? endpoint : `${API_PREFIX}/${endpoint}`,
+      data,
       headers,
     });
   },

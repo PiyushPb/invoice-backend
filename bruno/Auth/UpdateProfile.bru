@@ -1,0 +1,23 @@
+meta {
+  name: Update Profile (PATCH Me)
+  type: http
+  seq: 13
+}
+
+patch {
+  url: {{baseUrl}}/me
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+
+body:json {
+  {
+    "firstName": "John",
+    "lastName": "Doe",
+    "phone": "+919876543210"
+  }
+}

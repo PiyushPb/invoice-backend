@@ -1,0 +1,22 @@
+meta {
+  name: Delete Account (Deactivate Me)
+  type: http
+  seq: 16
+}
+
+delete {
+  url: {{baseUrl}}/me
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+
+body:json {
+  {
+    "password": "Password123!",
+    "reason": "Deactivating account"
+  }
+}

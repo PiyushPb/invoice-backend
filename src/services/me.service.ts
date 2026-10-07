@@ -6,7 +6,23 @@ import {
   SubscriptionStatus,
   UserStatus,
 } from "../generated/prisma/enums.js";
-import { ForbiddenError, NotFoundError } from "../utils/errors.js";
+import {
+  BadRequestError,
+  ForbiddenError,
+  NotFoundError,
+  UnauthorizedError,
+} from "../utils/errors.js";
+import { comparePassword } from "../utils/password.utils.js";
+import type {
+  DeleteAccountInput,
+  UpdatePreferencesInput,
+  UpdateProfileInput,
+} from "../validators/me.validator.js";
+
+export interface RequestContext {
+  ipAddress?: string;
+  userAgent?: string;
+}
 
 export interface UserProfileResponse {
   id: string;
@@ -100,6 +116,33 @@ export interface MeResponseData {
   subscription: SubscriptionResponse | null;
   entitlements: EntitlementResponse[];
   usage: UsageResponse[];
+}
+
+export interface UpdatedProfileResponse {
+  id: string;
+  email: string;
+  firstName: string;
+  lastName: string;
+  phone: string | null;
+  status: string;
+  updatedAt: Date;
+}
+
+export interface UserPreferencesResponse {
+  language: string;
+  timezone: string;
+  dateFormat: string;
+  numberFormat: string;
+  emailNotifications: boolean;
+  paymentNotifications: boolean;
+  marketingEmails: boolean;
+  updatedAt: Date;
+}
+
+export interface DeleteAccountResponse {
+  status: string;
+  deletedAt: Date;
+  retentionPeriodDays: number;
 }
 
 export class MeService {
@@ -263,7 +306,15 @@ export class MeService {
         phoneVerifiedAt: user.phoneVerifiedAt,
         lastLoginAt: user.lastLoginAt,
         createdAt: user.createdAt,
-        preferences: user.profile,
+        preferences: user.profile || {
+          language: "en-IN",
+          timezone: "Asia/Kolkata",
+          dateFormat: "DD/MM/YYYY",
+          numberFormat: "en-IN",
+          emailNotifications: true,
+          paymentNotifications: true,
+          marketingEmails: false,
+        },
       },
       business: business
         ? {
@@ -309,6 +360,398 @@ export class MeService {
       subscription,
       entitlements,
       usage,
+    };
+  }
+
+  /**
+   * Update personal profile (PATCH /api/v1/me)
+   * Updates firstName, lastName, phone with validation and audit logging
+   */
+  public static async updateProfile(
+    userId: string,
+    input: UpdateProfileInput,
+    context?: RequestContext
+  ): Promise<UpdatedProfileResponse> {
+    const user = await prisma.user.findFirst({
+      where: {
+        id: userId,
+        deletedAt: null,
+      },
+    });
+
+    if (!user) {
+      throw new NotFoundError("User not found");
+    }
+
+    if (user.status === UserStatus.SUSPENDED) {
+      throw new ForbiddenError(
+        "Your account has been suspended. Please contact support."
+      );
+    }
+
+    const dataToUpdate: {
+      firstName?: string;
+      lastName?: string;
+      phone?: string | null;
+    } = {};
+
+    if (input.firstName !== undefined) dataToUpdate.firstName = input.firstName;
+    if (input.lastName !== undefined) dataToUpdate.lastName = input.lastName;
+    if (input.phone !== undefined) dataToUpdate.phone = input.phone;
+
+    const [updatedUser] = await prisma.$transaction([
+      prisma.user.update({
+        where: { id: userId },
+        data: dataToUpdate,
+        select: {
+          id: true,
+          email: true,
+          firstName: true,
+          lastName: true,
+          phone: true,
+          status: true,
+          updatedAt: true,
+        },
+      }),
+      prisma.auditLog.create({
+        data: {
+          userId,
+          action: "USER_PROFILE_UPDATED",
+          entityType: "User",
+          entityId: userId,
+          oldValues: {
+            firstName: user.firstName,
+            lastName: user.lastName,
+            phone: user.phone,
+          },
+          newValues: dataToUpdate,
+          ipAddress: context?.ipAddress,
+          userAgent: context?.userAgent,
+        },
+      }),
+    ]);
+
+    return updatedUser;
+  }
+
+  /**
+   * Retrieve user localized & notification preferences (GET /api/v1/me/preferences)
+   * Gracefully auto-creates standard defaults if not present
+   */
+  public static async getPreferences(
+    userId: string
+  ): Promise<UserPreferencesResponse> {
+    const user = await prisma.user.findFirst({
+      where: {
+        id: userId,
+        deletedAt: null,
+      },
+      select: {
+        id: true,
+        status: true,
+      },
+    });
+
+    if (!user) {
+      throw new NotFoundError("User not found");
+    }
+
+    if (user.status === UserStatus.SUSPENDED) {
+      throw new ForbiddenError(
+        "Your account has been suspended. Please contact support."
+      );
+    }
+
+    // Upsert ensures legacy or newly provisioned users always get a solid preferences record
+    const preferences = await prisma.userPreferences.upsert({
+      where: { userId },
+      update: {},
+      create: {
+        userId,
+        language: "en-IN",
+        timezone: "Asia/Kolkata",
+        dateFormat: "DD/MM/YYYY",
+        numberFormat: "en-IN",
+        emailNotifications: true,
+        paymentNotifications: true,
+        marketingEmails: false,
+      },
+      select: {
+        language: true,
+        timezone: true,
+        dateFormat: true,
+        numberFormat: true,
+        emailNotifications: true,
+        paymentNotifications: true,
+        marketingEmails: true,
+        updatedAt: true,
+      },
+    });
+
+    return preferences;
+  }
+
+  /**
+   * Update user preferences (PATCH /api/v1/me/preferences)
+   */
+  public static async updatePreferences(
+    userId: string,
+    input: UpdatePreferencesInput,
+    context?: RequestContext
+  ): Promise<UserPreferencesResponse> {
+    const user = await prisma.user.findFirst({
+      where: {
+        id: userId,
+        deletedAt: null,
+      },
+      select: {
+        id: true,
+        status: true,
+      },
+    });
+
+    if (!user) {
+      throw new NotFoundError("User not found");
+    }
+
+    if (user.status === UserStatus.SUSPENDED) {
+      throw new ForbiddenError(
+        "Your account has been suspended. Please contact support."
+      );
+    }
+
+    const [updatedPreferences] = await prisma.$transaction([
+      prisma.userPreferences.upsert({
+        where: { userId },
+        update: input,
+        create: {
+          userId,
+          language: input.language ?? "en-IN",
+          timezone: input.timezone ?? "Asia/Kolkata",
+          dateFormat: input.dateFormat ?? "DD/MM/YYYY",
+          numberFormat: input.numberFormat ?? "en-IN",
+          emailNotifications: input.emailNotifications ?? true,
+          paymentNotifications: input.paymentNotifications ?? true,
+          marketingEmails: input.marketingEmails ?? false,
+        },
+        select: {
+          language: true,
+          timezone: true,
+          dateFormat: true,
+          numberFormat: true,
+          emailNotifications: true,
+          paymentNotifications: true,
+          marketingEmails: true,
+          updatedAt: true,
+        },
+      }),
+      prisma.auditLog.create({
+        data: {
+          userId,
+          action: "USER_PREFERENCES_UPDATED",
+          entityType: "UserPreferences",
+          entityId: userId,
+          newValues: input,
+          ipAddress: context?.ipAddress,
+          userAgent: context?.userAgent,
+        },
+      }),
+    ]);
+
+    return updatedPreferences;
+  }
+
+  /**
+   * Carefully controlled account deactivation / soft delete (DELETE /api/v1/me)
+   * - Enforces password re-verification
+   * - Enforces sole-owner multi-tenant protection (cannot orphan teams)
+   * - Archives personal workspaces and cancels subscriptions
+   * - Sets user status to DELETED and timestamps deletedAt
+   * - Immediately revokes all active user sessions
+   * - Creates immutable audit log entry
+   */
+  public static async deleteAccount(
+    userId: string,
+    input: DeleteAccountInput,
+    context?: RequestContext
+  ): Promise<DeleteAccountResponse> {
+    const user = await prisma.user.findFirst({
+      where: {
+        id: userId,
+        deletedAt: null,
+      },
+      include: {
+        businessMemberships: {
+          where: {
+            status: BusinessMemberStatus.ACTIVE,
+          },
+          include: {
+            business: {
+              include: {
+                members: {
+                  where: {
+                    status: BusinessMemberStatus.ACTIVE,
+                  },
+                  select: {
+                    id: true,
+                    userId: true,
+                    role: true,
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (!user) {
+      throw new NotFoundError("User not found or account is already deleted");
+    }
+
+    if (user.status === UserStatus.SUSPENDED) {
+      throw new ForbiddenError(
+        "Account is suspended. Please contact support."
+      );
+    }
+
+    // 1. Password Verification Guard
+    if (!user.passwordHash) {
+      throw new BadRequestError(
+        "Password is not configured for this account. Please contact support."
+      );
+    }
+
+    const isPasswordValid = await comparePassword(
+      input.password,
+      user.passwordHash
+    );
+
+    if (!isPasswordValid) {
+      throw new UnauthorizedError(
+        "Incorrect password. Account deletion cannot proceed."
+      );
+    }
+
+    // 2. Sole-Owner Guardrail:
+    // If user is OWNER of an active organization that has OTHER active team members,
+    // they must transfer ownership or remove members first to prevent orphan workspaces.
+    const businessesToArchive: string[] = [];
+    const membershipsToRemove: string[] = [];
+
+    for (const membership of user.businessMemberships) {
+      const biz = membership.business;
+      if (biz.status === BusinessStatus.ACTIVE && !biz.deletedAt) {
+        if (membership.role === BusinessMemberRole.OWNER) {
+          const otherActiveMembers = biz.members.filter(
+            (m) => m.userId !== userId
+          );
+          if (otherActiveMembers.length > 0) {
+            throw new BadRequestError(
+              `Cannot delete account: You are the sole owner of organization "${biz.name}" which has ${otherActiveMembers.length} active team member(s). Please transfer ownership to another team member or remove them before deleting your account.`
+            );
+          }
+          // User is the sole member of this business -> schedule business for archival
+          businessesToArchive.push(biz.id);
+        } else {
+          // User is a member/admin in an organization owned by someone else
+          membershipsToRemove.push(membership.id);
+        }
+      }
+    }
+
+    const now = new Date();
+
+    // 3. Transactional, controlled deactivation
+    await prisma.$transaction(async (tx) => {
+      // A. Archive user's personal businesses (where they were sole owner)
+      if (businessesToArchive.length > 0) {
+        await tx.business.updateMany({
+          where: { id: { in: businessesToArchive } },
+          data: {
+            status: BusinessStatus.ARCHIVED,
+            deletedAt: now,
+          },
+        });
+
+        // Cancel any active subscriptions on archived businesses
+        await tx.subscription.updateMany({
+          where: {
+            businessId: { in: businessesToArchive },
+            status: SubscriptionStatus.ACTIVE,
+          },
+          data: {
+            cancelAtPeriodEnd: true,
+          },
+        });
+      }
+
+      // B. Remove user from memberships in other organizations
+      if (membershipsToRemove.length > 0) {
+        await tx.businessMember.updateMany({
+          where: { id: { in: membershipsToRemove } },
+          data: {
+            status: BusinessMemberStatus.REMOVED,
+          },
+        });
+      }
+
+      // C. Soft-delete the user
+      await tx.user.update({
+        where: { id: userId },
+        data: {
+          status: UserStatus.DELETED,
+          deletedAt: now,
+        },
+      });
+
+      // D. Revoke all active sessions immediately
+      await tx.userSession.updateMany({
+        where: {
+          userId,
+          revokedAt: null,
+        },
+        data: {
+          revokedAt: now,
+        },
+      });
+
+      // E. Invalidate any pending password reset or verification tokens
+      await tx.passwordReset.updateMany({
+        where: { userId, usedAt: null },
+        data: { usedAt: now },
+      });
+      await tx.emailVerification.deleteMany({
+        where: { userId, verifiedAt: null },
+      });
+
+      // E. Write immutable audit log
+      await tx.auditLog.create({
+        data: {
+          userId,
+          action: "USER_ACCOUNT_DELETED",
+          entityType: "User",
+          entityId: userId,
+          oldValues: {
+            email: user.email,
+            status: user.status,
+            ownedBusinessesArchived: businessesToArchive,
+          },
+          newValues: {
+            status: UserStatus.DELETED,
+            deletedAt: now,
+            reason: input.reason || null,
+          },
+          ipAddress: context?.ipAddress,
+          userAgent: context?.userAgent,
+        },
+      });
+    });
+
+    return {
+      status: "DELETED",
+      deletedAt: now,
+      retentionPeriodDays: 30,
     };
   }
 }

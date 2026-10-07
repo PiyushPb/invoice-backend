@@ -130,8 +130,147 @@ export interface MeResponseData {
   }>;
 }
 
+export interface UpdatedProfileData {
+  id: string;
+  email: string;
+  firstName: string;
+  lastName: string;
+  phone: string | null;
+  status: string;
+  updatedAt: string;
+}
+
+export interface PreferencesData {
+  language: string;
+  timezone: string;
+  dateFormat: string;
+  numberFormat: string;
+  emailNotifications: boolean;
+  paymentNotifications: boolean;
+  marketingEmails: boolean;
+  updatedAt: string;
+}
+
+export interface DeleteAccountData {
+  status: string;
+  deletedAt: string;
+  retentionPeriodDays: number;
+}
+
+export interface BusinessDetailData {
+  id: string;
+  name: string;
+  legalName: string | null;
+  tradeName: string | null;
+  businessType: string;
+  industry: string | null;
+  email: string | null;
+  phone: string | null;
+  website: string | null;
+  logoUrl: string | null;
+  countryCode: string;
+  currencyCode: string;
+  timezone: string;
+  status: string;
+  createdAt: string;
+  updatedAt: string;
+  currentMember: {
+    role: string;
+    status: string;
+    joinedAt: string | null;
+    invitedAt: string | null;
+  };
+  settings: {
+    id: string;
+    invoicePrefix: string;
+    invoiceStartNumber: string;
+    defaultDueDays: number;
+    defaultNotes: string | null;
+    defaultTerms: string | null;
+    defaultCurrency: string;
+    defaultTaxInclusive: boolean;
+    showLogo: boolean;
+    showSignature: boolean;
+    showBankDetails: boolean;
+    showPaymentDetails: boolean;
+    invoiceTemplate: string;
+    createdAt: string;
+    updatedAt: string;
+  } | null;
+  taxProfile: {
+    id: string;
+    taxCountry: string;
+    taxRegistered: boolean;
+    gstin: string | null;
+    gstRegistrationType: string | null;
+    gstRegistrationDate: string | null;
+    pan: string | null;
+    tan: string | null;
+    taxpayerName: string | null;
+    defaultTaxMode: string;
+    defaultTaxRate: number | null;
+    placeOfSupplyStateCode: string | null;
+    reverseChargeEnabled: boolean;
+    createdAt: string;
+    updatedAt: string;
+  } | null;
+  addresses: Array<{
+    id: string;
+    type: string;
+    addressLine1: string;
+    addressLine2: string | null;
+    landmark: string | null;
+    city: string;
+    district: string | null;
+    state: string;
+    stateCode: string | null;
+    postalCode: string;
+    country: string;
+    countryCode: string;
+    isPrimary: boolean;
+    createdAt: string;
+    updatedAt: string;
+  }>;
+  bankAccounts: Array<{
+    id: string;
+    accountName: string;
+    bankName: string;
+    accountNumber: string;
+    ifscCode: string;
+    branchName: string | null;
+    accountType: string;
+    upiId: string | null;
+    isPrimary: boolean;
+    showOnInvoice: boolean;
+    createdAt: string;
+    updatedAt: string;
+  }>;
+  subscription: {
+    id: string;
+    status: string;
+    planCode: string;
+    planName: string;
+    description: string | null;
+    price: number;
+    currencyCode: string;
+    billingInterval: string;
+    isFree: boolean;
+    currentPeriodStart: string;
+    currentPeriodEnd: string;
+    cancelAtPeriodEnd: boolean;
+  } | null;
+  counts: {
+    members: number;
+    customers: number;
+    products: number;
+    invoices: number;
+  };
+}
+
 export interface HttpResponse<T = unknown> {
   status: number;
   data: ApiResponse<T>;
   headers: Record<string, string>;
 }
+
+

@@ -37,11 +37,13 @@ export const registerSchema = z.object({
     countryCode: z
       .string()
       .trim()
+      .toUpperCase()
       .length(2, "Country code must be a 2-character ISO code (e.g. IN)")
       .default("IN"),
     currencyCode: z
       .string()
       .trim()
+      .toUpperCase()
       .length(3, "Currency code must be a 3-character ISO code (e.g. INR)")
       .default("INR"),
   }),
@@ -109,3 +111,10 @@ export const resetPasswordSchema = z.object({
     .regex(/[^A-Za-z0-9]/, "Password must contain at least one special character"),
 });
 export type ResetPasswordInput = z.infer<typeof resetPasswordSchema>;
+
+export const sessionIdParamSchema = z.object({
+  sessionId: z
+    .string()
+    .uuid("Invalid session ID format. Must be a valid UUID."),
+});
+export type SessionIdParamInput = z.infer<typeof sessionIdParamSchema>;

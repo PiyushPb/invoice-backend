@@ -4,24 +4,63 @@ import {
   authenticate,
   optionalAuthenticate,
 } from "../../middlewares/auth.middleware.js";
+import { validateBody } from "../../middlewares/validate.js";
+import {
+  forgotPasswordSchema,
+  loginSchema,
+  logoutSchema,
+  refreshTokenSchema,
+  registerSchema,
+  resetPasswordSchema,
+  verifyEmailSchema,
+} from "../../validators/auth.validator.js";
 
 const router = Router();
 
 // ==========================================
 // Public Authentication Routes
 // ==========================================
-router.post("/register", AuthController.register);
-router.post("/login", AuthController.login);
-router.post("/refresh", AuthController.refresh);
-router.post("/logout", optionalAuthenticate, AuthController.logout);
+router.post(
+  "/register",
+  validateBody(registerSchema),
+  AuthController.register
+);
+router.post("/login", validateBody(loginSchema), AuthController.login);
+router.post(
+  "/refresh",
+  validateBody(refreshTokenSchema),
+  AuthController.refresh
+);
+router.post(
+  "/logout",
+  optionalAuthenticate,
+  validateBody(logoutSchema),
+  AuthController.logout
+);
 
 // Email Verification
-router.post("/verify-email", AuthController.verifyEmail);
-router.post("/verify-email/resend", optionalAuthenticate, AuthController.resendVerification);
+router.post(
+  "/verify-email",
+  validateBody(verifyEmailSchema),
+  AuthController.verifyEmail
+);
+router.post(
+  "/verify-email/resend",
+  optionalAuthenticate,
+  AuthController.resendVerification
+);
 
 // Password Reset Flow
-router.post("/forgot-password", AuthController.forgotPassword);
-router.post("/reset-password", AuthController.resetPassword);
+router.post(
+  "/forgot-password",
+  validateBody(forgotPasswordSchema),
+  AuthController.forgotPassword
+);
+router.post(
+  "/reset-password",
+  validateBody(resetPasswordSchema),
+  AuthController.resetPassword
+);
 
 // ==========================================
 // Protected Routes (Require Bearer Token)

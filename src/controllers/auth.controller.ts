@@ -1,13 +1,13 @@
 import type { Request, Response, NextFunction } from "express";
 import {
-  forgotPasswordSchema,
-  loginSchema,
-  logoutSchema,
-  refreshTokenSchema,
-  registerSchema,
   resendVerificationSchema,
-  resetPasswordSchema,
-  verifyEmailSchema,
+  type ForgotPasswordInput,
+  type LoginInput,
+  type LogoutInput,
+  type RefreshTokenInput,
+  type RegisterInput,
+  type ResetPasswordInput,
+  type VerifyEmailInput,
 } from "../validators/auth.validator.js";
 import { AuthService } from "../services/auth.service.js";
 import { SessionService } from "../services/session.service.js";
@@ -24,7 +24,7 @@ export class AuthController {
     next: NextFunction
   ): Promise<void> {
     try {
-      const validatedData = registerSchema.parse(req.body);
+      const validatedData = req.body as RegisterInput;
       const deviceInfo = parseDeviceInfo(req);
 
       const result = await AuthService.register(validatedData, deviceInfo);
@@ -48,7 +48,7 @@ export class AuthController {
     next: NextFunction
   ): Promise<void> {
     try {
-      const validatedData = loginSchema.parse(req.body);
+      const validatedData = req.body as LoginInput;
       const deviceInfo = parseDeviceInfo(req);
 
       const result = await AuthService.login(validatedData, deviceInfo);
@@ -72,7 +72,7 @@ export class AuthController {
     next: NextFunction
   ): Promise<void> {
     try {
-      const { refreshToken } = refreshTokenSchema.parse(req.body);
+      const { refreshToken } = req.body as RefreshTokenInput;
       const deviceInfo = parseDeviceInfo(req);
 
       const result = await AuthService.refreshToken(refreshToken, deviceInfo);
@@ -96,7 +96,7 @@ export class AuthController {
     next: NextFunction
   ): Promise<void> {
     try {
-      const { refreshToken } = logoutSchema.parse(req.body);
+      const { refreshToken } = (req.body || {}) as LogoutInput;
       const userId = req.user?.userId;
 
       await AuthService.logout(refreshToken, userId);
@@ -143,7 +143,7 @@ export class AuthController {
     next: NextFunction
   ): Promise<void> {
     try {
-      const { token } = verifyEmailSchema.parse(req.body);
+      const { token } = req.body as VerifyEmailInput;
       await AuthService.verifyEmail(token);
 
       res.status(200).json({
@@ -188,7 +188,7 @@ export class AuthController {
     next: NextFunction
   ): Promise<void> {
     try {
-      const { email } = forgotPasswordSchema.parse(req.body);
+      const { email } = req.body as ForgotPasswordInput;
       const result = await AuthService.forgotPassword(email);
 
       res.status(200).json({
@@ -210,7 +210,7 @@ export class AuthController {
     next: NextFunction
   ): Promise<void> {
     try {
-      const { token, newPassword } = resetPasswordSchema.parse(req.body);
+      const { token, newPassword } = req.body as ResetPasswordInput;
       await AuthService.resetPassword(token, newPassword);
 
       res.status(200).json({

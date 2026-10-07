@@ -178,6 +178,58 @@ export class AuthService {
         },
       });
 
+      // Seed default plan entitlements if not yet defined
+      await tx.planEntitlement.upsert({
+        where: {
+          planId_feature: {
+            planId: freePlan.id,
+            feature: "INVOICES_LIFETIME",
+          },
+        },
+        update: {},
+        create: {
+          planId: freePlan.id,
+          feature: "INVOICES_LIFETIME",
+          limitValue: 50n,
+          isUnlimited: false,
+          isEnabled: true,
+        },
+      });
+
+      await tx.planEntitlement.upsert({
+        where: {
+          planId_feature: {
+            planId: freePlan.id,
+            feature: "CUSTOMERS_ACTIVE",
+          },
+        },
+        update: {},
+        create: {
+          planId: freePlan.id,
+          feature: "CUSTOMERS_ACTIVE",
+          limitValue: 20n,
+          isUnlimited: false,
+          isEnabled: true,
+        },
+      });
+
+      await tx.planEntitlement.upsert({
+        where: {
+          planId_feature: {
+            planId: freePlan.id,
+            feature: "PRODUCTS_ACTIVE",
+          },
+        },
+        update: {},
+        create: {
+          planId: freePlan.id,
+          feature: "PRODUCTS_ACTIVE",
+          limitValue: 20n,
+          isUnlimited: false,
+          isEnabled: true,
+        },
+      });
+
       const periodStart = new Date();
       const periodEnd = new Date();
       periodEnd.setFullYear(periodStart.getFullYear() + 10); // 10 years active for free tier
