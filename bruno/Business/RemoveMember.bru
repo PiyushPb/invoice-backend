@@ -1,0 +1,19 @@
+meta {
+  name: Remove Member
+  type: http
+  seq: 6
+}
+
+delete {
+  url: {{baseUrl}}/business/members/:memberId
+  body: none
+  auth: bearer
+}
+
+params:path {
+  memberId: 00000000-0000-0000-0000-000000000000
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}

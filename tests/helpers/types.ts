@@ -267,10 +267,101 @@ export interface BusinessDetailData {
   };
 }
 
+export interface BusinessMemberRecord {
+  id: string;
+  businessId: string;
+  userId: string;
+  role: string;
+  status: string;
+  invitedAt: string | null;
+  joinedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+  user: {
+    id: string;
+    firstName: string;
+    lastName: string;
+    email: string;
+    phone: string | null;
+    status: string;
+    createdAt: string;
+  };
+}
+
+export interface InviteMemberData {
+  id: string;
+  businessId: string;
+  userId: string;
+  email: string;
+  role: string;
+  status: string;
+  invitedAt: string | null;
+  invitedById: string | null;
+}
+
+export interface BusinessAddressRecord {
+  id: string;
+  type: string;
+  addressLine1: string;
+  addressLine2: string | null;
+  landmark: string | null;
+  city: string;
+  district: string | null;
+  state: string;
+  stateCode: string | null;
+  postalCode: string;
+  country: string;
+  countryCode: string;
+  isPrimary: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface BusinessTaxProfileRecord {
+  id: string;
+  businessId: string;
+  taxCountry: string;
+  taxRegistered: boolean;
+  gstRegistered?: boolean;
+  gstin: string | null;
+  gstRegistrationType: string | null;
+  gstRegistrationDate: string | null;
+  pan: string | null;
+  tan: string | null;
+  taxpayerName: string | null;
+  defaultTaxMode: string;
+  taxMode?: string;
+  defaultTaxRate: number | null;
+  placeOfSupplyStateCode: string | null;
+  placeOfSupply?: string | null;
+  reverseChargeEnabled: boolean;
+  reverseCharge?: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface BusinessBankAccountRecord {
+  id: string;
+  businessId: string;
+  accountName: string;
+  bankName: string;
+  accountNumber: string;
+  ifscCode: string;
+  branchName: string | null;
+  accountType: string;
+  upiId: string | null;
+  isPrimary: boolean;
+  showOnInvoice: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface HttpResponse<T = unknown> {
   status: number;
   data: ApiResponse<T>;
   headers: Record<string, string>;
 }
+
+
 
 

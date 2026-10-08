@@ -1,0 +1,33 @@
+meta {
+  name: Add Bank Account
+  type: http
+  seq: 14
+}
+
+post {
+  url: {{baseUrl}}/business/bank-accounts
+  body: json
+  auth: bearer
+}
+
+headers {
+  Content-Type: application/json
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+
+body:json {
+  {
+    "accountName": "Acme Global Solutions Pvt Ltd",
+    "bankName": "HDFC Bank",
+    "accountNumber": "50200012345678",
+    "ifscCode": "HDFC0001234",
+    "branchName": "Indiranagar",
+    "accountType": "CURRENT",
+    "upiId": "acme@hdfcbank",
+    "isPrimary": true,
+    "showOnInvoice": true
+  }
+}

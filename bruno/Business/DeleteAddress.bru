@@ -1,0 +1,19 @@
+meta {
+  name: Delete Business Address
+  type: http
+  seq: 10
+}
+
+delete {
+  url: {{baseUrl}}/business/addresses/:addressId
+  body: none
+  auth: bearer
+}
+
+params:path {
+  addressId: 00000000-0000-0000-0000-000000000000
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}

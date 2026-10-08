@@ -1,0 +1,27 @@
+meta {
+  name: Update Bank Account
+  type: http
+  seq: 15
+}
+
+patch {
+  url: {{baseUrl}}/business/bank-accounts/{{bankAccountId}}
+  body: json
+  auth: bearer
+}
+
+headers {
+  Content-Type: application/json
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+
+body:json {
+  {
+    "accountName": "Acme Global Solutions - Main Operations",
+    "branchName": "Indiranagar 100ft Road",
+    "showOnInvoice": true
+  }
+}
