@@ -1,18 +1,24 @@
 import { Router } from "express";
 import { BusinessController } from "../../controllers/business.controller.js";
 import { authenticate } from "../../middlewares/auth.middleware.js";
-import { validateBody, validateParams } from "../../middlewares/validate.js";
+import {
+  validateBody,
+  validateParams,
+  validateQuery,
+} from "../../middlewares/validate.js";
 import {
   accountIdParamSchema,
   addressIdParamSchema,
   createAddressSchema,
   createBankAccountSchema,
+  getUpiQrQuerySchema,
   inviteMemberSchema,
   memberIdParamSchema,
   updateAddressSchema,
   updateBankAccountSchema,
   updateBusinessSchema,
   updateMemberRoleSchema,
+  updateSettingsSchema,
   updateTaxProfileSchema,
 } from "../../validators/business.validator.js";
 
@@ -108,6 +114,20 @@ router.patch(
 );
 
 // ============================================================
+// Business Settings
+// ============================================================
+
+// GET /api/v1/business/settings - Get business settings
+router.get("/settings", BusinessController.getSettings);
+
+// PATCH /api/v1/business/settings - Update business settings (OWNER / ADMIN only)
+router.patch(
+  "/settings",
+  validateBody(updateSettingsSchema),
+  BusinessController.updateSettings
+);
+
+// ============================================================
 // Business Bank Accounts
 // ============================================================
 
@@ -141,6 +161,14 @@ router.post(
   "/bank-accounts/:accountId/set-primary",
   validateParams(accountIdParamSchema),
   BusinessController.setPrimaryBankAccount
+);
+
+// GET /api/v1/business/bank-accounts/:accountId/upi-qr - Generate dynamic UPI QR payload
+router.get(
+  "/bank-accounts/:accountId/upi-qr",
+  validateParams(accountIdParamSchema),
+  validateQuery(getUpiQrQuerySchema),
+  BusinessController.getBankAccountUpiQr
 );
 
 export default router;

@@ -3,6 +3,7 @@ import { prisma } from "../config/prisma.js";
 import { comparePassword, hashPassword } from "../utils/password.utils.js";
 import { generateAuthTokens, verifyRefreshToken } from "../utils/jwt.utils.js";
 import { config } from "../config/env.js";
+import { DEFAULT_PLANS } from "../config/plans.config.js";
 import {
   BadRequestError,
   ConflictError,
@@ -178,57 +179,27 @@ export class AuthService {
         },
       });
 
-      // Seed default plan entitlements if not yet defined
-      await tx.planEntitlement.upsert({
-        where: {
-          planId_feature: {
-            planId: freePlan.id,
-            feature: "INVOICES_LIFETIME",
+      // Seed default plan entitlements from centralized plan configuration
+      for (const [featureKey, featureDef] of Object.entries(
+        DEFAULT_PLANS["FREE"].features
+      )) {
+        await tx.planEntitlement.upsert({
+          where: {
+            planId_feature: {
+              planId: freePlan.id,
+              feature: featureKey,
+            },
           },
-        },
-        update: {},
-        create: {
-          planId: freePlan.id,
-          feature: "INVOICES_LIFETIME",
-          limitValue: 50n,
-          isUnlimited: false,
-          isEnabled: true,
-        },
-      });
-
-      await tx.planEntitlement.upsert({
-        where: {
-          planId_feature: {
+          update: {},
+          create: {
             planId: freePlan.id,
-            feature: "CUSTOMERS_ACTIVE",
+            feature: featureKey,
+            limitValue: featureDef.isUnlimited ? null : BigInt(featureDef.limit),
+            isUnlimited: featureDef.isUnlimited,
+            isEnabled: featureDef.isEnabled,
           },
-        },
-        update: {},
-        create: {
-          planId: freePlan.id,
-          feature: "CUSTOMERS_ACTIVE",
-          limitValue: 20n,
-          isUnlimited: false,
-          isEnabled: true,
-        },
-      });
-
-      await tx.planEntitlement.upsert({
-        where: {
-          planId_feature: {
-            planId: freePlan.id,
-            feature: "PRODUCTS_ACTIVE",
-          },
-        },
-        update: {},
-        create: {
-          planId: freePlan.id,
-          feature: "PRODUCTS_ACTIVE",
-          limitValue: 20n,
-          isUnlimited: false,
-          isEnabled: true,
-        },
-      });
+        });
+      }
 
       const periodStart = new Date();
       const periodEnd = new Date();
@@ -377,9 +348,9 @@ export class AuthService {
 
     // Resolve primary active business: prioritize OWNER role, then ADMIN, then first available
     const activeMembership =
-      user.businessMemberships.find((m) => m.role === BusinessMemberRole.OWNER) ||
-      user.businessMemberships.find((m) => m.role === BusinessMemberRole.ADMIN) ||
-      user.businessMemberships[0] ||
+      user.businessMemberships.find((m) => m.role === BusinessMemberRole.OWNER) ??
+      user.businessMemberships.find((m) => m.role === BusinessMemberRole.ADMIN) ??
+      user.businessMemberships[0] ??
       null;
 
     // Generate fresh JWT tokens
@@ -481,9 +452,9 @@ export class AuthService {
     }
 
     const activeMembership =
-      user.businessMemberships.find((m) => m.role === BusinessMemberRole.OWNER) ||
-      user.businessMemberships.find((m) => m.role === BusinessMemberRole.ADMIN) ||
-      user.businessMemberships[0] ||
+      user.businessMemberships.find((m) => m.role === BusinessMemberRole.OWNER) ??
+      user.businessMemberships.find((m) => m.role === BusinessMemberRole.ADMIN) ??
+      user.businessMemberships[0] ??
       null;
 
     const newTokens = generateAuthTokens({

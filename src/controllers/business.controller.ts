@@ -8,6 +8,7 @@ import type {
   UpdateBankAccountInput,
   UpdateBusinessInput,
   UpdateMemberRoleInput,
+  UpdateSettingsInput,
   UpdateTaxProfileInput,
 } from "../validators/business.validator.js";
 
@@ -319,6 +320,58 @@ export class BusinessController {
   }
 
   // ============================================================
+  // Business Settings
+  // ============================================================
+
+  /**
+   * GET /api/v1/business/settings
+   * Retrieve workspace settings for the logged-in individual's business.
+   */
+  public static async getSettings(
+    req: Request,
+    res: Response,
+    next: NextFunction
+  ): Promise<void> {
+    try {
+      const userId = req.user!.userId;
+      const result = await BusinessService.getSettings(userId);
+
+      res.status(200).json({
+        success: true,
+        message: "Business settings retrieved successfully",
+        data: result,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * PATCH /api/v1/business/settings
+   * Update workspace settings for the logged-in individual's business.
+   * Requires OWNER or ADMIN role.
+   */
+  public static async updateSettings(
+    req: Request,
+    res: Response,
+    next: NextFunction
+  ): Promise<void> {
+    try {
+      const userId = req.user!.userId;
+      const input = req.body as UpdateSettingsInput;
+      const result = await BusinessService.updateSettings(userId, input);
+
+      res.status(200).json({
+        success: true,
+        message: "Business settings updated successfully",
+        data: result,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // ============================================================
   // Business Bank Accounts
   // ============================================================
 
@@ -446,6 +499,42 @@ export class BusinessController {
       res.status(200).json({
         success: true,
         message: "Bank account set as primary successfully",
+        data: result,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * GET /api/v1/business/bank-accounts/:accountId/upi-qr
+   * Generate dynamic NPCI-compliant UPI QR code payload for a bank account.
+   */
+  public static async getBankAccountUpiQr(
+    req: Request,
+    res: Response,
+    next: NextFunction
+  ): Promise<void> {
+    try {
+      const userId = req.user!.userId;
+      const accountId = req.params["accountId"] as string;
+      const amount = req.query["amount"] as string | undefined;
+      const note = (req.query["note"] ?? req.query["tn"]) as string | undefined;
+      const ref = (req.query["ref"] ?? req.query["tr"]) as string | undefined;
+
+      const result = await BusinessService.getBankAccountUpiQr(
+        userId,
+        accountId,
+        {
+          amount,
+          note,
+          ref,
+        }
+      );
+
+      res.status(200).json({
+        success: true,
+        message: "UPI QR code payload generated successfully",
         data: result,
       });
     } catch (error) {

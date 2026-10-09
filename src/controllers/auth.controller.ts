@@ -1,13 +1,13 @@
 import type { Request, Response, NextFunction } from "express";
-import {
-  resendVerificationSchema,
-  type ForgotPasswordInput,
-  type LoginInput,
-  type LogoutInput,
-  type RefreshTokenInput,
-  type RegisterInput,
-  type ResetPasswordInput,
-  type VerifyEmailInput,
+import type {
+  ForgotPasswordInput,
+  LoginInput,
+  LogoutInput,
+  RefreshTokenInput,
+  RegisterInput,
+  ResendVerificationInput,
+  ResetPasswordInput,
+  VerifyEmailInput,
 } from "../validators/auth.validator.js";
 import { AuthService } from "../services/auth.service.js";
 import { SessionService } from "../services/session.service.js";
@@ -96,7 +96,7 @@ export class AuthController {
     next: NextFunction
   ): Promise<void> {
     try {
-      const { refreshToken } = (req.body || {}) as LogoutInput;
+      const { refreshToken } = (req.body ?? {}) as LogoutInput;
       const userId = req.user?.userId;
 
       await AuthService.logout(refreshToken, userId);
@@ -164,10 +164,8 @@ export class AuthController {
     next: NextFunction
   ): Promise<void> {
     try {
-      const email = req.body.email || req.user?.email;
-      const { email: validatedEmail } = resendVerificationSchema.parse({ email });
-
-      const result = await AuthService.resendVerification(validatedEmail);
+      const { email } = req.body as ResendVerificationInput;
+      const result = await AuthService.resendVerification(email);
 
       res.status(200).json({
         success: true,

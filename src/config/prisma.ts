@@ -22,8 +22,8 @@ declare global {
   var __pool: pg.Pool | undefined;
 }
 
-export const prisma = global.__prisma || new PrismaClient({ adapter });
-export const dbPool = global.__pool || pool;
+export const prisma = global.__prisma ?? new PrismaClient({ adapter });
+export const dbPool = global.__pool ?? pool;
 
 if (config.nodeEnv !== "production") {
   global.__prisma = prisma;

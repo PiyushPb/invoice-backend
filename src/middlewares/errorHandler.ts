@@ -58,7 +58,7 @@ export function errorHandler(
     if (prismaError.code === "P2002") {
       const target = Array.isArray(prismaError.meta?.target)
         ? (prismaError.meta.target as string[]).join(", ")
-        : (prismaError.meta?.target as string) || "field";
+        : ((prismaError.meta?.target as string | undefined) ?? "field");
       res.status(409).json({
         success: false,
         message: `A record with this ${target} already exists`,

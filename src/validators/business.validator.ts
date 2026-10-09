@@ -7,6 +7,7 @@ import {
   GstRegistrationType,
   TaxMode,
 } from "../generated/prisma/enums.js";
+import { isValidUpiId } from "../utils/upi.util.js";
 
 /**
  * Validation schema for updating business profile (PATCH /api/v1/business)
@@ -437,6 +438,83 @@ export const updateTaxProfileSchema = z
 export type UpdateTaxProfileInput = z.infer<typeof updateTaxProfileSchema>;
 
 /**
+ * Validation schema for updating business settings (PATCH /api/v1/business/settings)
+ */
+export const updateSettingsSchema = z
+  .object({
+    invoicePrefix: z
+      .string()
+      .trim()
+      .min(1, "Invoice prefix cannot be empty")
+      .max(20, "Invoice prefix cannot exceed 20 characters")
+      .optional(),
+    defaultInvoiceNumber: z
+      .union([
+        z.number().int().min(1, "Default invoice number must be at least 1"),
+        z
+          .string()
+          .trim()
+          .regex(/^\d+$/, "Default invoice number must be a valid positive integer"),
+      ])
+      .optional(),
+    invoiceStartNumber: z
+      .union([
+        z.number().int().min(1, "Invoice start number must be at least 1"),
+        z
+          .string()
+          .trim()
+          .regex(/^\d+$/, "Invoice start number must be a valid positive integer"),
+      ])
+      .optional(),
+    defaultDueDays: z
+      .number()
+      .int()
+      .min(0, "Due days cannot be negative")
+      .max(365, "Due days cannot exceed 365 days")
+      .optional(),
+    defaultNotes: z
+      .union([
+        z.string().trim().max(2000, "Default notes cannot exceed 2000 characters"),
+        z.null(),
+      ])
+      .optional(),
+    defaultTerms: z
+      .union([
+        z.string().trim().max(5000, "Default terms cannot exceed 5000 characters"),
+        z.null(),
+      ])
+      .optional(),
+    invoiceTemplate: z
+      .string()
+      .trim()
+      .min(1, "Invoice template cannot be empty")
+      .max(50, "Invoice template cannot exceed 50 characters")
+      .optional(),
+    defaultTaxMode: z
+      .nativeEnum(TaxMode, {
+        message: "Tax mode must be TAX_EXCLUSIVE or TAX_INCLUSIVE",
+      })
+      .optional(),
+    defaultTaxInclusive: z.boolean().optional(),
+    defaultCurrency: z
+      .string()
+      .trim()
+      .length(3, "Default currency must be exactly 3 uppercase letters (e.g. INR)")
+      .toUpperCase()
+      .optional(),
+    showLogo: z.boolean().optional(),
+    showBankDetails: z.boolean().optional(),
+    showSignature: z.boolean().optional(),
+    showPaymentDetails: z.boolean().optional(),
+  })
+  .strict()
+  .refine((data) => Object.keys(data).length > 0, {
+    message: "At least one field must be provided to update business settings",
+  });
+
+export type UpdateSettingsInput = z.infer<typeof updateSettingsSchema>;
+
+/**
  * Validation schema for accountId route parameter
  */
 export const accountIdParamSchema = z
@@ -448,6 +526,26 @@ export const accountIdParamSchema = z
   .strict();
 
 export type AccountIdParam = z.infer<typeof accountIdParamSchema>;
+
+/**
+ * Validation schema for UPI ID (Virtual Payment Address)
+ * Validates format: username@bank (e.g. business@okhdfcbank, 9876543210@paytm)
+ * Normalizes to lowercase and trims whitespace; transforms empty string to null.
+ */
+export const upiIdSchema = z
+  .union([
+    z
+      .string()
+      .trim()
+      .max(255, "UPI ID cannot exceed 255 characters")
+      .transform((val) => (val === "" ? null : val.toLowerCase()))
+      .refine((val) => val === null || isValidUpiId(val), {
+        message:
+          "Invalid UPI ID format. Expected format: username@bank (e.g. acme@okhdfcbank or 9876543210@paytm)",
+      }),
+    z.null(),
+  ])
+  .optional();
 
 /**
  * Validation schema for adding a bank account (POST /api/v1/business/bank-accounts)
@@ -485,12 +583,7 @@ export const createBankAccountSchema = z
     accountType: z.nativeEnum(AccountType, {
       message: "Account type must be SAVINGS, CURRENT, or OTHER",
     }),
-    upiId: z
-      .union([
-        z.string().trim().max(255, "UPI ID cannot exceed 255 characters"),
-        z.null(),
-      ])
-      .optional(),
+    upiId: upiIdSchema,
     isPrimary: z.boolean().optional(),
     showOnInvoice: z.boolean().default(true).optional(),
   })
@@ -540,12 +633,7 @@ export const updateBankAccountSchema = z
         message: "Account type must be SAVINGS, CURRENT, or OTHER",
       })
       .optional(),
-    upiId: z
-      .union([
-        z.string().trim().max(255, "UPI ID cannot exceed 255 characters"),
-        z.null(),
-      ])
-      .optional(),
+    upiId: upiIdSchema,
     isPrimary: z.boolean().optional(),
     showOnInvoice: z.boolean().optional(),
   })
@@ -555,3 +643,29 @@ export const updateBankAccountSchema = z
   });
 
 export type UpdateBankAccountInput = z.infer<typeof updateBankAccountSchema>;
+
+/**
+ * Validation schema for generating dynamic UPI QR payload (GET /api/v1/business/bank-accounts/:accountId/upi-qr)
+ */
+export const getUpiQrQuerySchema = z
+  .object({
+    amount: z
+      .union([
+        z.coerce.number().positive("Amount must be greater than zero"),
+        z.string().trim().regex(/^\d+(\.\d{1,2})?$/, "Amount must be a valid positive number"),
+      ])
+      .optional(),
+    note: z
+      .string()
+      .trim()
+      .max(100, "Transaction note cannot exceed 100 characters")
+      .optional(),
+    ref: z
+      .string()
+      .trim()
+      .max(35, "Transaction reference cannot exceed 35 characters")
+      .optional(),
+  })
+  .strict();
+
+export type GetUpiQrQueryInput = z.infer<typeof getUpiQrQuerySchema>;

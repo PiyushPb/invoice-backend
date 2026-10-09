@@ -1,4 +1,7 @@
 import { prisma } from "../config/prisma.js";
+import { Prisma } from "../generated/prisma/client.js";
+import { PlanFeatureKey } from "../config/plans.config.js";
+import { PlanPolicyService } from "./plan-policy.service.js";
 import {
   AccountType,
   BusinessMemberRole,
@@ -10,10 +13,13 @@ import {
   UserStatus,
 } from "../generated/prisma/enums.js";
 import {
+  BadRequestError,
   ConflictError,
   ForbiddenError,
   NotFoundError,
 } from "../utils/errors.js";
+import { generateUpiQrPayload, normalizeUpiId } from "../utils/upi.util.js";
+import { appConfig } from "../config/app.config.js";
 import type {
   CreateAddressInput,
   CreateBankAccountInput,
@@ -22,6 +28,7 @@ import type {
   UpdateBankAccountInput,
   UpdateBusinessInput,
   UpdateMemberRoleInput,
+  UpdateSettingsInput,
   UpdateTaxProfileInput,
 } from "../validators/business.validator.js";
 
@@ -53,6 +60,7 @@ export interface BusinessBankAccountDetail {
   branchName: string | null;
   accountType: string;
   upiId: string | null;
+  upiQrPayload: string | null;
   isPrimary: boolean;
   showOnInvoice: boolean;
   createdAt: Date;
@@ -61,13 +69,16 @@ export interface BusinessBankAccountDetail {
 
 export interface BusinessSettingsDetail {
   id: string;
+  businessId: string;
   invoicePrefix: string;
   invoiceStartNumber: string;
+  defaultInvoiceNumber: string;
   defaultDueDays: number;
   defaultNotes: string | null;
   defaultTerms: string | null;
   defaultCurrency: string;
   defaultTaxInclusive: boolean;
+  defaultTaxMode: TaxMode;
   showLogo: boolean;
   showSignature: boolean;
   showBankDetails: boolean;
@@ -312,24 +323,7 @@ export class BusinessService {
       },
 
       settings: business.settings
-        ? {
-            id: business.settings.id,
-            invoicePrefix: business.settings.invoicePrefix,
-            invoiceStartNumber:
-              business.settings.invoiceStartNumber.toString(),
-            defaultDueDays: business.settings.defaultDueDays,
-            defaultNotes: business.settings.defaultNotes,
-            defaultTerms: business.settings.defaultTerms,
-            defaultCurrency: business.settings.defaultCurrency,
-            defaultTaxInclusive: business.settings.defaultTaxInclusive,
-            showLogo: business.settings.showLogo,
-            showSignature: business.settings.showSignature,
-            showBankDetails: business.settings.showBankDetails,
-            showPaymentDetails: business.settings.showPaymentDetails,
-            invoiceTemplate: business.settings.invoiceTemplate,
-            createdAt: business.settings.createdAt,
-            updatedAt: business.settings.updatedAt,
-          }
+        ? BusinessService.formatSettings(business.settings)
         : null,
 
       taxProfile: business.taxProfile
@@ -777,10 +771,12 @@ export class BusinessService {
       );
     }
 
-    // Tier check: Free tier businesses are not allowed to invite team members
-    const activeSub = membership.business.plans[0] ?? null;
-    const plan = activeSub?.plan ?? null;
-    if (!plan || plan.isFree || plan.code.toUpperCase() === "FREE") {
+    // Policy check: Team member invitations enabled on current plan
+    const canInvite = await PlanPolicyService.isFeatureEnabled(
+      membership.businessId,
+      PlanFeatureKey.TEAM_INVITES
+    );
+    if (!canInvite) {
       throw new ForbiddenError(
         "Team member invitation is not available on the Free plan. Please upgrade your subscription to collaborate with team members."
       );
@@ -840,7 +836,7 @@ export class BusinessService {
       }
     } else {
       // Create user record for the invited member
-      const emailPrefix = normalizedEmail.split("@")[0] || "Invited";
+      const emailPrefix = normalizedEmail.split("@")[0] ?? "Invited";
       targetUser = await prisma.user.create({
         data: {
           email: normalizedEmail,
@@ -970,7 +966,7 @@ export class BusinessService {
       });
 
       // If user marked as primary or this is the first address, ensure it's primary
-      const isPrimary = input.isPrimary || existingCount === 0;
+      const isPrimary = input.isPrimary === true ? true : existingCount === 0;
 
       if (isPrimary) {
         await tx.businessAddress.updateMany({
@@ -991,8 +987,8 @@ export class BusinessService {
           state: input.state,
           stateCode: input.stateCode,
           postalCode: input.postalCode,
-          country: input.country || "India",
-          countryCode: input.countryCode || "IN",
+          country: input.country ?? "India",
+          countryCode: input.countryCode ?? "IN",
           isPrimary,
         },
       });
@@ -1248,6 +1244,54 @@ export class BusinessService {
   }
 
   /**
+   * Helper to format a BusinessSettings record into BusinessSettingsDetail
+   */
+  public static formatSettings(settings: {
+    id: string;
+    businessId: string;
+    invoicePrefix: string;
+    invoiceStartNumber: bigint;
+    defaultDueDays: number;
+    defaultNotes: string | null;
+    defaultTerms: string | null;
+    defaultCurrency: string;
+    defaultTaxInclusive: boolean;
+    showLogo: boolean;
+    showSignature: boolean;
+    showBankDetails: boolean;
+    showPaymentDetails: boolean;
+    invoiceTemplate: string;
+    createdAt: Date;
+    updatedAt: Date;
+  }): BusinessSettingsDetail {
+    const startNumStr = settings.invoiceStartNumber.toString();
+    const defaultTaxMode = settings.defaultTaxInclusive
+      ? TaxMode.TAX_INCLUSIVE
+      : TaxMode.TAX_EXCLUSIVE;
+
+    return {
+      id: settings.id,
+      businessId: settings.businessId,
+      invoicePrefix: settings.invoicePrefix,
+      invoiceStartNumber: startNumStr,
+      defaultInvoiceNumber: startNumStr,
+      defaultDueDays: settings.defaultDueDays,
+      defaultNotes: settings.defaultNotes,
+      defaultTerms: settings.defaultTerms,
+      defaultCurrency: settings.defaultCurrency,
+      defaultTaxInclusive: settings.defaultTaxInclusive,
+      defaultTaxMode,
+      showLogo: settings.showLogo,
+      showSignature: settings.showSignature,
+      showBankDetails: settings.showBankDetails,
+      showPaymentDetails: settings.showPaymentDetails,
+      invoiceTemplate: settings.invoiceTemplate,
+      createdAt: settings.createdAt,
+      updatedAt: settings.updatedAt,
+    };
+  }
+
+  /**
    * Helper to format a BusinessBankAccount record into BusinessBankAccountDetail
    */
   public static formatBankAccount(bank: {
@@ -1265,6 +1309,19 @@ export class BusinessService {
     createdAt: Date;
     updatedAt: Date;
   }): BusinessBankAccountDetail {
+    const normalizedUpi = normalizeUpiId(bank.upiId);
+    let upiQrPayload: string | null = null;
+    if (normalizedUpi) {
+      try {
+        upiQrPayload = generateUpiQrPayload({
+          upiId: normalizedUpi,
+          payeeName: bank.accountName,
+        });
+      } catch {
+        upiQrPayload = null;
+      }
+    }
+
     return {
       id: bank.id,
       businessId: bank.businessId,
@@ -1274,7 +1331,8 @@ export class BusinessService {
       ifscCode: bank.ifscCode,
       branchName: bank.branchName,
       accountType: bank.accountType,
-      upiId: bank.upiId,
+      upiId: normalizedUpi,
+      upiQrPayload,
       isPrimary: bank.isPrimary,
       showOnInvoice: bank.showOnInvoice,
       createdAt: bank.createdAt,
@@ -1470,6 +1528,214 @@ export class BusinessService {
   }
 
   // ============================================================
+  // Business Settings
+  // ============================================================
+
+  /**
+   * GET /api/v1/business/settings
+   * Retrieve workspace settings for the authenticated user's active business.
+   */
+  public static async getSettings(
+    userId: string
+  ): Promise<BusinessSettingsDetail> {
+    const membership = await prisma.businessMember.findFirst({
+      where: {
+        userId,
+        status: BusinessMemberStatus.ACTIVE,
+        business: {
+          status: BusinessStatus.ACTIVE,
+          deletedAt: null,
+        },
+      },
+      select: {
+        businessId: true,
+      },
+    });
+
+    if (!membership) {
+      throw new NotFoundError("No active business found for this user");
+    }
+
+    let settings = await prisma.businessSettings.findUnique({
+      where: { businessId: membership.businessId },
+    });
+
+    if (!settings) {
+      settings = await prisma.businessSettings.create({
+        data: {
+          businessId: membership.businessId,
+          invoicePrefix: appConfig.businessDefaults.invoicePrefix,
+          invoiceStartNumber: 1n,
+          defaultDueDays: appConfig.businessDefaults.dueDays,
+          defaultNotes: null,
+          defaultTerms: null,
+          defaultCurrency: appConfig.businessDefaults.currency,
+          defaultTaxInclusive: false,
+          showLogo: appConfig.businessDefaults.showLogo,
+          showSignature: false,
+          showBankDetails: appConfig.businessDefaults.showBankDetails,
+          showPaymentDetails: appConfig.businessDefaults.showPaymentDetails,
+          invoiceTemplate: appConfig.businessDefaults.template,
+        },
+      });
+    }
+
+    return BusinessService.formatSettings(settings);
+  }
+
+  /**
+   * PATCH /api/v1/business/settings
+   * Update workspace settings.
+   * Requires OWNER or ADMIN role.
+   */
+  public static async updateSettings(
+    userId: string,
+    input: UpdateSettingsInput
+  ): Promise<BusinessSettingsDetail> {
+    const membership = await prisma.businessMember.findFirst({
+      where: {
+        userId,
+        status: BusinessMemberStatus.ACTIVE,
+        business: {
+          status: BusinessStatus.ACTIVE,
+          deletedAt: null,
+        },
+      },
+      select: {
+        businessId: true,
+        role: true,
+      },
+    });
+
+    if (!membership) {
+      throw new NotFoundError("No active business found for this user");
+    }
+
+    if (
+      membership.role !== BusinessMemberRole.OWNER &&
+      membership.role !== BusinessMemberRole.ADMIN
+    ) {
+      throw new ForbiddenError(
+        "Only business owners and administrators can update business settings"
+      );
+    }
+
+    // Resolve aliases cleanly without any || operators
+    const startNumberRaw =
+      input.defaultInvoiceNumber !== undefined
+        ? input.defaultInvoiceNumber
+        : input.invoiceStartNumber !== undefined
+        ? input.invoiceStartNumber
+        : undefined;
+
+    const invoiceStartNumber =
+      startNumberRaw !== undefined ? BigInt(startNumberRaw) : undefined;
+
+    let defaultTaxInclusive: boolean | undefined = undefined;
+    if (input.defaultTaxInclusive !== undefined) {
+      defaultTaxInclusive = input.defaultTaxInclusive;
+    } else if (input.defaultTaxMode !== undefined) {
+      defaultTaxInclusive = input.defaultTaxMode === TaxMode.TAX_INCLUSIVE;
+    }
+
+    const showBankDetails =
+      input.showBankDetails !== undefined
+        ? input.showBankDetails
+        : input.showPaymentDetails !== undefined
+        ? input.showPaymentDetails
+        : undefined;
+
+    const showPaymentDetails =
+      input.showPaymentDetails !== undefined
+        ? input.showPaymentDetails
+        : input.showBankDetails !== undefined
+        ? input.showBankDetails
+        : undefined;
+
+    const updated = await prisma.$transaction(async (tx) => {
+      const settingsRecord = await tx.businessSettings.upsert({
+        where: { businessId: membership.businessId },
+        create: {
+          businessId: membership.businessId,
+          invoicePrefix:
+            input.invoicePrefix ?? appConfig.businessDefaults.invoicePrefix,
+          invoiceStartNumber: invoiceStartNumber ?? 1n,
+          defaultDueDays:
+            input.defaultDueDays ?? appConfig.businessDefaults.dueDays,
+          defaultNotes: input.defaultNotes ?? null,
+          defaultTerms: input.defaultTerms ?? null,
+          defaultCurrency:
+            input.defaultCurrency ?? appConfig.businessDefaults.currency,
+          defaultTaxInclusive: defaultTaxInclusive ?? false,
+          showLogo: input.showLogo ?? appConfig.businessDefaults.showLogo,
+          showSignature: input.showSignature ?? false,
+          showBankDetails:
+            showBankDetails ?? appConfig.businessDefaults.showBankDetails,
+          showPaymentDetails:
+            showPaymentDetails ??
+            appConfig.businessDefaults.showPaymentDetails,
+          invoiceTemplate:
+            input.invoiceTemplate ?? appConfig.businessDefaults.template,
+        },
+        update: {
+          ...(input.invoicePrefix !== undefined && {
+            invoicePrefix: input.invoicePrefix,
+          }),
+          ...(invoiceStartNumber !== undefined && {
+            invoiceStartNumber,
+          }),
+          ...(input.defaultDueDays !== undefined && {
+            defaultDueDays: input.defaultDueDays,
+          }),
+          ...(input.defaultNotes !== undefined && {
+            defaultNotes: input.defaultNotes,
+          }),
+          ...(input.defaultTerms !== undefined && {
+            defaultTerms: input.defaultTerms,
+          }),
+          ...(input.defaultCurrency !== undefined && {
+            defaultCurrency: input.defaultCurrency,
+          }),
+          ...(defaultTaxInclusive !== undefined && {
+            defaultTaxInclusive,
+          }),
+          ...(input.showLogo !== undefined && {
+            showLogo: input.showLogo,
+          }),
+          ...(input.showSignature !== undefined && {
+            showSignature: input.showSignature,
+          }),
+          ...(showBankDetails !== undefined && {
+            showBankDetails,
+          }),
+          ...(showPaymentDetails !== undefined && {
+            showPaymentDetails,
+          }),
+          ...(input.invoiceTemplate !== undefined && {
+            invoiceTemplate: input.invoiceTemplate,
+          }),
+        },
+      });
+
+      // Synchronize BusinessTaxProfile if tax mode was explicitly modified
+      if (defaultTaxInclusive !== undefined) {
+        await tx.businessTaxProfile.updateMany({
+          where: { businessId: membership.businessId },
+          data: {
+            defaultTaxMode: defaultTaxInclusive
+              ? TaxMode.TAX_INCLUSIVE
+              : TaxMode.TAX_EXCLUSIVE,
+          },
+        });
+      }
+
+      return settingsRecord;
+    });
+
+    return BusinessService.formatSettings(updated);
+  }
+
+  // ============================================================
   // Business Bank Accounts
   // ============================================================
 
@@ -1510,9 +1776,51 @@ export class BusinessService {
   }
 
   /**
+   * Helper to check whether a business is currently on the Free tier.
+   * A business is on the free tier if:
+   * - It has no active subscription, OR
+   * - Its active subscription's plan is marked as isFree = true, OR
+   * - Its active subscription's plan code is "FREE"
+   */
+  public static async isBusinessOnFreePlan(
+    businessId: string,
+    tx?: Prisma.TransactionClient
+  ): Promise<boolean> {
+    const client = tx ?? prisma;
+    const activeSub = await client.subscription.findFirst({
+      where: {
+        businessId,
+        status: SubscriptionStatus.ACTIVE,
+      },
+      orderBy: {
+        createdAt: "desc",
+      },
+      include: {
+        plan: true,
+      },
+    });
+
+    if (activeSub === null) {
+      return true; // Default to free tier
+    }
+
+    const plan = activeSub.plan;
+    if (plan === null) {
+      return true;
+    }
+
+    if (plan.isFree) {
+      return true;
+    }
+
+    return plan.code.toUpperCase() === "FREE";
+  }
+
+  /**
    * POST /api/v1/business/bank-accounts
    * Add a new bank account.
    * Requires OWNER or ADMIN role.
+   * Free tier restriction: maximum 1 bank account and 1 UPI ID allowed.
    */
   public static async addBankAccount(
     userId: string,
@@ -1547,9 +1855,52 @@ export class BusinessService {
     }
 
     const created = await prisma.$transaction(async (tx) => {
+      // 1. Industrial-grade concurrency control: acquire exclusive row-lock on Business
+      // to serialize modifications and prevent TOCTOU race conditions across concurrent requests.
+      await tx.$queryRaw`SELECT id FROM "Business" WHERE id = ${membership.businessId}::uuid FOR UPDATE`;
+
+      // 2. Data-driven Feature Quota Resolution (decoupled from plan codes)
+      const bankEntitlement = await PlanPolicyService.getFeatureEntitlement(
+        membership.businessId,
+        PlanFeatureKey.BANK_ACCOUNTS,
+        tx
+      );
+
       const existingCount = await tx.businessBankAccount.count({
         where: { businessId: membership.businessId },
       });
+
+      // Enforce bank account limit dynamically based on plan entitlement
+      if (!bankEntitlement.isUnlimited && existingCount >= bankEntitlement.limit) {
+        throw new ForbiddenError(
+          `Free plan is limited to ${bankEntitlement.limit} bank account. Please upgrade your subscription to add more bank accounts.`
+        );
+      }
+
+      // Check UPI ID Quota dynamically based on plan entitlement
+      const normalizedUpi =
+        input.upiId !== undefined ? normalizeUpiId(input.upiId) : null;
+
+      if (normalizedUpi !== null) {
+        const upiEntitlement = await PlanPolicyService.getFeatureEntitlement(
+          membership.businessId,
+          PlanFeatureKey.UPI_IDS,
+          tx
+        );
+
+        const existingUpiCount = await tx.businessBankAccount.count({
+          where: {
+            businessId: membership.businessId,
+            upiId: { not: null },
+          },
+        });
+
+        if (!upiEntitlement.isUnlimited && existingUpiCount >= upiEntitlement.limit) {
+          throw new ForbiddenError(
+            `Free plan is limited to ${upiEntitlement.limit} UPI ID. Please upgrade your subscription to add more UPI IDs.`
+          );
+        }
+      }
 
       // If this is the very first account, force isPrimary to true.
       // Otherwise use input.isPrimary if specified, or default to false.
@@ -1577,7 +1928,7 @@ export class BusinessService {
           ifscCode: input.ifscCode,
           branchName: input.branchName ?? null,
           accountType: input.accountType,
-          upiId: input.upiId ?? null,
+          upiId: normalizedUpi,
           isPrimary: shouldBePrimary,
           showOnInvoice: input.showOnInvoice ?? true,
         },
@@ -1637,6 +1988,37 @@ export class BusinessService {
     }
 
     const updated = await prisma.$transaction(async (tx) => {
+      // 1. Industrial-grade concurrency control: acquire exclusive row-lock on Business
+      await tx.$queryRaw`SELECT id FROM "Business" WHERE id = ${membership.businessId}::uuid FOR UPDATE`;
+
+      // 2. Data-driven UPI quota enforcement
+      if (input.upiId !== undefined) {
+        const normalizedUpi = normalizeUpiId(input.upiId);
+        if (normalizedUpi !== null) {
+          const upiEntitlement = await PlanPolicyService.getFeatureEntitlement(
+            membership.businessId,
+            PlanFeatureKey.UPI_IDS,
+            tx
+          );
+
+          if (!upiEntitlement.isUnlimited) {
+            const existingOtherUpiCount = await tx.businessBankAccount.count({
+              where: {
+                businessId: membership.businessId,
+                id: { not: accountId },
+                upiId: { not: null },
+              },
+            });
+
+            if (existingOtherUpiCount >= upiEntitlement.limit) {
+              throw new ForbiddenError(
+                `Free plan is limited to ${upiEntitlement.limit} UPI ID. Please upgrade your subscription to configure multiple UPI IDs.`
+              );
+            }
+          }
+        }
+      }
+
       if (input.isPrimary === true) {
         // Demote all other accounts
         await tx.businessBankAccount.updateMany({
@@ -1680,7 +2062,9 @@ export class BusinessService {
           ...(input.accountType !== undefined && {
             accountType: input.accountType,
           }),
-          ...(input.upiId !== undefined && { upiId: input.upiId }),
+          ...(input.upiId !== undefined && {
+            upiId: normalizeUpiId(input.upiId),
+          }),
           ...(input.isPrimary !== undefined && {
             isPrimary: input.isPrimary,
           }),
@@ -1830,5 +2214,97 @@ export class BusinessService {
     });
 
     return BusinessService.formatBankAccount(updated);
+  }
+
+  /**
+   * GET /api/v1/business/bank-accounts/:accountId/upi-qr
+   * Generate an NPCI-compliant UPI QR code payload and deep-link URI for a bank account.
+   * Supports optional amount, transaction note, and reference.
+   */
+  public static async getBankAccountUpiQr(
+    userId: string,
+    accountId: string,
+    options?: {
+      amount?: number | string;
+      note?: string;
+      ref?: string;
+    }
+  ): Promise<{
+    accountId: string;
+    accountName: string;
+    bankName: string;
+    upiId: string;
+    payeeName: string;
+    amount: number | null;
+    currency: string;
+    transactionNote: string | null;
+    transactionRef: string | null;
+    qrPayload: string;
+  }> {
+    const membership = await prisma.businessMember.findFirst({
+      where: {
+        userId,
+        status: BusinessMemberStatus.ACTIVE,
+        business: {
+          status: BusinessStatus.ACTIVE,
+          deletedAt: null,
+        },
+      },
+      select: {
+        businessId: true,
+      },
+    });
+
+    if (!membership) {
+      throw new NotFoundError("No active business found for this user");
+    }
+
+    const bankAccount = await prisma.businessBankAccount.findFirst({
+      where: {
+        id: accountId,
+        businessId: membership.businessId,
+      },
+    });
+
+    if (!bankAccount) {
+      throw new NotFoundError("Bank account not found in this business");
+    }
+
+    const normalizedUpi = normalizeUpiId(bankAccount.upiId);
+    if (!normalizedUpi) {
+      throw new BadRequestError(
+        "This bank account does not have a UPI ID configured. Please update the account with a UPI ID first."
+      );
+    }
+
+    const payeeName = bankAccount.accountName;
+    const amountVal =
+      options?.amount !== undefined && options?.amount !== null
+        ? typeof options.amount === "number"
+          ? options.amount
+          : parseFloat(options.amount)
+        : null;
+
+    const qrPayload = generateUpiQrPayload({
+      upiId: normalizedUpi,
+      payeeName,
+      amount: amountVal && !isNaN(amountVal) ? amountVal : undefined,
+      currency: "INR",
+      transactionNote: options?.note ?? undefined,
+      transactionRef: options?.ref ?? undefined,
+    });
+
+    return {
+      accountId: bankAccount.id,
+      accountName: bankAccount.accountName,
+      bankName: bankAccount.bankName,
+      upiId: normalizedUpi,
+      payeeName,
+      amount: amountVal && !isNaN(amountVal) ? amountVal : null,
+      currency: "INR",
+      transactionNote: options?.note ?? null,
+      transactionRef: options?.ref ?? null,
+      qrPayload,
+    };
   }
 }

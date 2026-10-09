@@ -247,9 +247,9 @@ export class MeService {
       );
     }
 
-    const business = membership?.business || null;
-    const activeSub = business?.plans?.[0] || null;
-    const plan = activeSub?.plan || null;
+    const business = membership?.business ?? null;
+    const activeSub = business?.plans?.[0] ?? null;
+    const plan = activeSub?.plan ?? null;
 
     // Transform entitlements with BigInt -> Number safe conversion
     const entitlements: EntitlementResponse[] = plan?.entitlements
@@ -306,7 +306,7 @@ export class MeService {
         phoneVerifiedAt: user.phoneVerifiedAt,
         lastLoginAt: user.lastLoginAt,
         createdAt: user.createdAt,
-        preferences: user.profile || {
+        preferences: user.profile ?? {
           language: "en-IN",
           timezone: "Asia/Kolkata",
           dateFormat: "DD/MM/YYYY",
@@ -356,7 +356,7 @@ export class MeService {
               : null,
           }
         : null,
-      role: membership?.role || null,
+      role: membership?.role ?? null,
       subscription,
       entitlements,
       usage,
@@ -740,7 +740,7 @@ export class MeService {
           newValues: {
             status: UserStatus.DELETED,
             deletedAt: now,
-            reason: input.reason || null,
+            reason: input.reason ?? null,
           },
           ipAddress: context?.ipAddress,
           userAgent: context?.userAgent,

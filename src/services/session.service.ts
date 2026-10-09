@@ -21,7 +21,7 @@ export class SessionService {
    */
   public static calculateExpiryDate(): Date {
     const defaultDays = 7;
-    const configValue = config.jwt.refreshExpiresIn || "7d";
+    const configValue = config.jwt.refreshExpiresIn ?? "7d";
 
     const match = configValue.match(/^(\d+)([dhms]?)$/);
     if (!match) {
@@ -29,7 +29,7 @@ export class SessionService {
     }
 
     const value = parseInt(match[1]!, 10);
-    const unit = match[2] || "d";
+    const unit = match[2] !== undefined && match[2].length > 0 ? match[2] : "d";
 
     let multiplier = 24 * 60 * 60 * 1000; // default days
     if (unit === "h") multiplier = 60 * 60 * 1000;

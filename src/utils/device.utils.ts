@@ -40,7 +40,7 @@ export function extractClientIp(req: Request): string | null {
  * Parse client information, system/device name, and device type from HTTP request
  */
 export function parseDeviceInfo(req: Request): DeviceInfo {
-  const userAgent = req.headers["user-agent"] || null;
+  const userAgent = req.headers["user-agent"] ?? null;
   const ipAddress = extractClientIp(req);
 
   // Allow explicit client override if provided by a frontend client or native app

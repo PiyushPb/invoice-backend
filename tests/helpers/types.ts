@@ -350,8 +350,30 @@ export interface BusinessBankAccountRecord {
   branchName: string | null;
   accountType: string;
   upiId: string | null;
+  upiQrPayload?: string | null;
   isPrimary: boolean;
   showOnInvoice: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface BusinessSettingsRecord {
+  id: string;
+  businessId: string;
+  invoicePrefix: string;
+  invoiceStartNumber: string;
+  defaultInvoiceNumber: string;
+  defaultDueDays: number;
+  defaultNotes: string | null;
+  defaultTerms: string | null;
+  defaultCurrency: string;
+  defaultTaxInclusive: boolean;
+  defaultTaxMode: string;
+  showLogo: boolean;
+  showSignature: boolean;
+  showBankDetails: boolean;
+  showPaymentDetails: boolean;
+  invoiceTemplate: string;
   createdAt: string;
   updatedAt: string;
 }

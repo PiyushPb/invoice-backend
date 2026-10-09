@@ -22,7 +22,7 @@ export class MeController {
 
       // Allow client to request a specific workspace context via header or token
       const targetBusinessId =
-        (req.headers["x-business-id"] as string | undefined) ||
+        (req.headers["x-business-id"] as string | undefined) ??
         req.user?.businessId;
 
       const result = await MeService.getMe(userId, targetBusinessId);

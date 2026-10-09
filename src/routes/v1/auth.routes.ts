@@ -11,6 +11,7 @@ import {
   logoutSchema,
   refreshTokenSchema,
   registerSchema,
+  resendVerificationSchema,
   resetPasswordSchema,
   verifyEmailSchema,
 } from "../../validators/auth.validator.js";
@@ -46,7 +47,7 @@ router.post(
 );
 router.post(
   "/verify-email/resend",
-  optionalAuthenticate,
+  validateBody(resendVerificationSchema),
   AuthController.resendVerification
 );
 
