@@ -748,5 +748,269 @@ describe("Invoices API (/api/v1/invoices)", () => {
       expect(eventTypes).toContain("PDF_GENERATED");
     });
   });
+
+  describe("Invoice Payments API", () => {
+    it("should record partial and full payments and update invoice balance and status", async () => {
+      const { accessToken } = await createTestUser("inv_pay_record");
+
+      const createRes = await api.post(
+        "/api/v1/invoices",
+        {
+          buyerName: "Paying Customer",
+          items: [
+            { type: "PRODUCT", description: "Hardware", quantity: 2, unitPrice: 5000 },
+          ],
+        },
+        authHeader(accessToken)
+      );
+      const invoiceId = createRes.data.data.id;
+
+      // Issue the invoice first
+      await api.post(`/api/v1/invoices/${invoiceId}/issue`, {}, authHeader(accessToken));
+
+      // Record first partial payment: 4000 out of 10000
+      const pay1Res = await api.post(
+        `/api/v1/invoices/${invoiceId}/payments`,
+        {
+          amount: 4000,
+          paymentDate: "2026-10-04",
+          paymentMethod: "UPI",
+          referenceNumber: "UPI123456",
+          notes: "Advance payment",
+        },
+        authHeader(accessToken)
+      );
+
+      expect(pay1Res.status).toBe(201);
+      expect(pay1Res.data.success).toBe(true);
+      expect(Number(pay1Res.data.data.payment.amount)).toBe(4000);
+      expect(pay1Res.data.data.payment.status).toBe("COMPLETED");
+      expect(pay1Res.data.data.invoiceSummary.amountPaid).toBe(4000);
+      expect(pay1Res.data.data.invoiceSummary.amountDue).toBe(6000);
+      expect(pay1Res.data.data.invoiceSummary.status).toBe("PARTIALLY_PAID");
+
+      // Verify invoice state
+      const invCheck1 = await api.get(`/api/v1/invoices/${invoiceId}`, authHeader(accessToken));
+      expect(invCheck1.data.data.status).toBe("PARTIALLY_PAID");
+      expect(Number(invCheck1.data.data.amountPaid)).toBe(4000);
+      expect(Number(invCheck1.data.data.amountDue)).toBe(6000);
+
+      // Attempt payment exceeding amount due (e.g. 7000 when 6000 due) -> 400 Bad Request
+      const overpayRes = await api.post(
+        `/api/v1/invoices/${invoiceId}/payments`,
+        {
+          amount: 7000,
+          paymentMethod: "CASH",
+        },
+        authHeader(accessToken)
+      );
+      expect(overpayRes.status).toBe(400);
+      expect(overpayRes.data.message).toMatch(/exceeds remaining amount due/i);
+
+      // Record second payment to fully pay: 6000
+      const pay2Res = await api.post(
+        `/api/v1/invoices/${invoiceId}/payments`,
+        {
+          amount: 6000,
+          paymentMethod: "BANK_TRANSFER",
+          referenceNumber: "NEFT987654",
+          notes: "Final clearance",
+        },
+        authHeader(accessToken)
+      );
+
+      expect(pay2Res.status).toBe(201);
+      expect(pay2Res.data.data.invoiceSummary.amountPaid).toBe(10000);
+      expect(pay2Res.data.data.invoiceSummary.amountDue).toBe(0);
+      expect(pay2Res.data.data.invoiceSummary.status).toBe("PAID");
+
+      // Verify invoice is PAID
+      const invCheck2 = await api.get(`/api/v1/invoices/${invoiceId}`, authHeader(accessToken));
+      expect(invCheck2.data.data.status).toBe("PAID");
+      expect(invCheck2.data.data.paidAt).toBeDefined();
+
+      // Recording payment on already fully paid invoice -> 409 Conflict
+      const extraPayRes = await api.post(
+        `/api/v1/invoices/${invoiceId}/payments`,
+        { amount: 500, paymentMethod: "CASH" },
+        authHeader(accessToken)
+      );
+      expect(extraPayRes.status).toBe(409);
+      expect(extraPayRes.data.message).toMatch(/already fully paid/i);
+    });
+
+    it("should list invoice payments with summary metadata", async () => {
+      const { accessToken } = await createTestUser("inv_pay_list");
+
+      const createRes = await api.post(
+        "/api/v1/invoices",
+        {
+          buyerName: "Client A",
+          items: [{ type: "SERVICE", description: "Design", quantity: 1, unitPrice: 8000 }],
+        },
+        authHeader(accessToken)
+      );
+      const invoiceId = createRes.data.data.id;
+      await api.post(`/api/v1/invoices/${invoiceId}/issue`, {}, authHeader(accessToken));
+
+      await api.post(
+        `/api/v1/invoices/${invoiceId}/payments`,
+        { amount: 3000, paymentMethod: "CARD" },
+        authHeader(accessToken)
+      );
+
+      const listRes = await api.get(
+        `/api/v1/invoices/${invoiceId}/payments`,
+        authHeader(accessToken)
+      );
+
+      expect(listRes.status).toBe(200);
+      expect(listRes.data.success).toBe(true);
+      expect(listRes.data.data.payments.length).toBe(1);
+      expect(listRes.data.data.summary.totalAmount).toBe(8000);
+      expect(listRes.data.data.summary.amountPaid).toBe(3000);
+      expect(listRes.data.data.summary.amountDue).toBe(5000);
+      expect(listRes.data.data.summary.paymentCount).toBe(1);
+    });
+
+    it("should update a payment and recalculate invoice status if amount changed", async () => {
+      const { accessToken } = await createTestUser("inv_pay_update");
+
+      const createRes = await api.post(
+        "/api/v1/invoices",
+        {
+          buyerName: "Client B",
+          items: [{ type: "PRODUCT", description: "Supplies", quantity: 1, unitPrice: 5000 }],
+        },
+        authHeader(accessToken)
+      );
+      const invoiceId = createRes.data.data.id;
+      await api.post(`/api/v1/invoices/${invoiceId}/issue`, {}, authHeader(accessToken));
+
+      const payRes = await api.post(
+        `/api/v1/invoices/${invoiceId}/payments`,
+        { amount: 2000, paymentMethod: "UPI", notes: "Initial installment" },
+        authHeader(accessToken)
+      );
+      const paymentId = payRes.data.data.payment.id;
+
+      // Update notes and increase amount to 5000 (fully paying)
+      const updateRes = await api.patch(
+        `/api/v1/invoices/${invoiceId}/payments/${paymentId}`,
+        {
+          amount: 5000,
+          notes: "Full payment revised",
+        },
+        authHeader(accessToken)
+      );
+
+      expect(updateRes.status).toBe(200);
+      expect(updateRes.data.success).toBe(true);
+      expect(Number(updateRes.data.data.amount)).toBe(5000);
+      expect(updateRes.data.data.notes).toBe("Full payment revised");
+
+      // Verify invoice transitioned to PAID
+      const invCheck = await api.get(`/api/v1/invoices/${invoiceId}`, authHeader(accessToken));
+      expect(invCheck.data.data.status).toBe("PAID");
+      expect(Number(invCheck.data.data.amountPaid)).toBe(5000);
+      expect(Number(invCheck.data.data.amountDue)).toBe(0);
+    });
+
+    it("should refund a payment and restore invoice balance and status", async () => {
+      const { accessToken } = await createTestUser("inv_pay_refund");
+
+      const createRes = await api.post(
+        "/api/v1/invoices",
+        {
+          buyerName: "Client C",
+          items: [{ type: "PRODUCT", description: "Goods", quantity: 1, unitPrice: 6000 }],
+        },
+        authHeader(accessToken)
+      );
+      const invoiceId = createRes.data.data.id;
+      await api.post(`/api/v1/invoices/${invoiceId}/issue`, {}, authHeader(accessToken));
+
+      const payRes = await api.post(
+        `/api/v1/invoices/${invoiceId}/payments`,
+        { amount: 6000, paymentMethod: "UPI" },
+        authHeader(accessToken)
+      );
+      const paymentId = payRes.data.data.payment.id;
+
+      // Invoice is currently PAID
+      let invCheck = await api.get(`/api/v1/invoices/${invoiceId}`, authHeader(accessToken));
+      expect(invCheck.data.data.status).toBe("PAID");
+
+      // Refund the payment
+      const refundRes = await api.post(
+        `/api/v1/invoices/${invoiceId}/payments/${paymentId}/refund`,
+        { reason: "Customer requested return" },
+        authHeader(accessToken)
+      );
+
+      expect(refundRes.status).toBe(200);
+      expect(refundRes.data.success).toBe(true);
+      expect(refundRes.data.data.status).toBe("REFUNDED");
+      expect(refundRes.data.data.notes).toMatch(/Refund: Customer requested return/);
+
+      // Invoice status reverts to ISSUED and amountDue back to 6000
+      invCheck = await api.get(`/api/v1/invoices/${invoiceId}`, authHeader(accessToken));
+      expect(invCheck.data.data.status).toBe("ISSUED");
+      expect(Number(invCheck.data.data.amountPaid)).toBe(0);
+      expect(Number(invCheck.data.data.amountDue)).toBe(6000);
+
+      // Attempting to refund again -> 409 Conflict
+      const refundAgain = await api.post(
+        `/api/v1/invoices/${invoiceId}/payments/${paymentId}/refund`,
+        {},
+        authHeader(accessToken)
+      );
+      expect(refundAgain.status).toBe(409);
+      expect(refundAgain.data.message).toMatch(/already refunded/i);
+    });
+
+    it("should preserve financial history on delete by creating a reversal rather than hard deleting", async () => {
+      const { accessToken } = await createTestUser("inv_pay_delete");
+
+      const createRes = await api.post(
+        "/api/v1/invoices",
+        {
+          buyerName: "Client D",
+          items: [{ type: "PRODUCT", description: "Service Hours", quantity: 1, unitPrice: 4000 }],
+        },
+        authHeader(accessToken)
+      );
+      const invoiceId = createRes.data.data.id;
+      await api.post(`/api/v1/invoices/${invoiceId}/issue`, {}, authHeader(accessToken));
+
+      const payRes = await api.post(
+        `/api/v1/invoices/${invoiceId}/payments`,
+        { amount: 4000, paymentMethod: "CASH" },
+        authHeader(accessToken)
+      );
+      const paymentId = payRes.data.data.payment.id;
+
+      // Delete payment
+      const delRes = await api.delete(
+        `/api/v1/invoices/${invoiceId}/payments/${paymentId}`,
+        authHeader(accessToken)
+      );
+
+      expect(delRes.status).toBe(200);
+      expect(delRes.data.success).toBe(true);
+      expect(delRes.data.data.status).toBe("REFUNDED");
+
+      // Verify the payment row still exists in listing (not hard-deleted)
+      const listRes = await api.get(
+        `/api/v1/invoices/${invoiceId}/payments`,
+        authHeader(accessToken)
+      );
+      expect(listRes.data.data.payments.length).toBe(1);
+      expect(listRes.data.data.payments[0].status).toBe("REFUNDED");
+      // And financial balance restored
+      expect(listRes.data.data.summary.amountPaid).toBe(0);
+      expect(listRes.data.data.summary.amountDue).toBe(4000);
+    });
+  });
 });
 

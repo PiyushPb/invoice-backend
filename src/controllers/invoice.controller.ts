@@ -2,9 +2,13 @@ import type { Request, Response, NextFunction } from "express";
 import { InvoiceService } from "../services/invoice.service.js";
 import type {
   CreateInvoiceInput,
+  CreateInvoicePaymentInput,
   InvoiceIdParam,
+  InvoicePaymentIdParam,
   ListInvoicesQuery,
+  RefundPaymentInput,
   UpdateInvoiceDraftInput,
+  UpdateInvoicePaymentInput,
 } from "../validators/invoice.validator.js";
 
 export class InvoiceController {
@@ -362,5 +366,163 @@ export class InvoiceController {
       next(error);
     }
   }
+
+  // ============================================================
+  // Invoice Payments
+  // ============================================================
+
+  /**
+   * GET /api/v1/invoices/:invoiceId/payments
+   * Returns list of payments recorded against the invoice.
+   */
+  public static async listPayments(
+    req: Request,
+    res: Response,
+    next: NextFunction
+  ): Promise<void> {
+    try {
+      const userId = req.user!.userId;
+      const { invoiceId } = req.params as unknown as InvoiceIdParam;
+
+      const payments = await InvoiceService.listPayments(userId, invoiceId);
+
+      res.status(200).json({
+        success: true,
+        message: "Invoice payments retrieved successfully",
+        data: payments,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * POST /api/v1/invoices/:invoiceId/payments
+   * Records a payment against an invoice.
+   */
+  public static async recordPayment(
+    req: Request,
+    res: Response,
+    next: NextFunction
+  ): Promise<void> {
+    try {
+      const userId = req.user!.userId;
+      const { invoiceId } = req.params as unknown as InvoiceIdParam;
+      const input = req.body as CreateInvoicePaymentInput;
+
+      const result = await InvoiceService.recordPayment(
+        userId,
+        invoiceId,
+        input
+      );
+
+      res.status(201).json({
+        success: true,
+        message: "Payment recorded successfully",
+        data: {
+          payment: result.payment,
+          invoiceSummary: result.invoiceSummary,
+        },
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * PATCH /api/v1/invoices/:invoiceId/payments/:paymentId
+   * Updates an existing completed payment.
+   */
+  public static async updatePayment(
+    req: Request,
+    res: Response,
+    next: NextFunction
+  ): Promise<void> {
+    try {
+      const userId = req.user!.userId;
+      const { invoiceId, paymentId } =
+        req.params as unknown as InvoicePaymentIdParam;
+      const input = req.body as UpdateInvoicePaymentInput;
+
+      const payment = await InvoiceService.updatePayment(
+        userId,
+        invoiceId,
+        paymentId,
+        input
+      );
+
+      res.status(200).json({
+        success: true,
+        message: "Payment updated successfully",
+        data: payment,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * POST /api/v1/invoices/:invoiceId/payments/:paymentId/refund
+   * Refunds/reverses a payment.
+   */
+  public static async refundPayment(
+    req: Request,
+    res: Response,
+    next: NextFunction
+  ): Promise<void> {
+    try {
+      const userId = req.user!.userId;
+      const { invoiceId, paymentId } =
+        req.params as unknown as InvoicePaymentIdParam;
+      const input = req.body as RefundPaymentInput;
+
+      const payment = await InvoiceService.refundPayment(
+        userId,
+        invoiceId,
+        paymentId,
+        input
+      );
+
+      res.status(200).json({
+        success: true,
+        message: "Payment refunded successfully",
+        data: payment,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * DELETE /api/v1/invoices/:invoiceId/payments/:paymentId
+   * Reverses the payment (financial audit trail preserved, not destroyed).
+   */
+  public static async deletePayment(
+    req: Request,
+    res: Response,
+    next: NextFunction
+  ): Promise<void> {
+    try {
+      const userId = req.user!.userId;
+      const { invoiceId, paymentId } =
+        req.params as unknown as InvoicePaymentIdParam;
+
+      const payment = await InvoiceService.deletePayment(
+        userId,
+        invoiceId,
+        paymentId
+      );
+
+      res.status(200).json({
+        success: true,
+        message:
+          "Payment reversed and marked as refunded (financial audit trail preserved)",
+        data: payment,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
 }
+
 

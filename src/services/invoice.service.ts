@@ -5,6 +5,7 @@ import {
   DiscountType,
   InvoiceEventType,
   InvoiceStatus,
+  PaymentStatus,
 } from "../generated/prisma/enums.js";
 import { prisma } from "../config/prisma.js";
 import { PlanPolicyService } from "./plan-policy.service.js";
@@ -17,10 +18,13 @@ import {
 import type {
   CancelInvoiceInput,
   CreateInvoiceInput,
+  CreateInvoicePaymentInput,
   InvoiceLineItemInput,
   ListInvoicesQuery,
+  RefundPaymentInput,
   SendInvoiceInput,
   UpdateInvoiceDraftInput,
+  UpdateInvoicePaymentInput,
   VoidInvoiceInput,
 } from "../validators/invoice.validator.js";
 
@@ -1556,5 +1560,449 @@ export class InvoiceService {
       },
     });
   }
+
+  // ============================================================
+  // Invoice Payments
+  // ============================================================
+
+  /**
+   * Retrieves all payments recorded against an invoice.
+   */
+  public static async listPayments(userId: string, invoiceId: string) {
+    const { businessId } = await resolveActiveMembership(userId);
+
+    const invoice = await prisma.invoice.findFirst({
+      where: { id: invoiceId, businessId },
+      select: {
+        id: true,
+        totalAmount: true,
+        amountPaid: true,
+        amountDue: true,
+        status: true,
+      },
+    });
+
+    if (invoice === null) {
+      throw new NotFoundError("Invoice not found");
+    }
+
+    const payments = await prisma.invoicePayment.findMany({
+      where: { invoiceId, businessId },
+      orderBy: [{ paymentDate: "desc" }, { createdAt: "desc" }],
+      include: {
+        createdBy: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            email: true,
+          },
+        },
+      },
+    });
+
+    const summary = {
+      totalAmount: Number(invoice.totalAmount),
+      amountPaid: Number(invoice.amountPaid),
+      amountDue: Number(invoice.amountDue),
+      status: invoice.status,
+      paymentCount: payments.length,
+    };
+
+    return { payments, summary };
+  }
+
+  /**
+   * Records a payment against an invoice.
+   * Recalculates amountPaid, amountDue, and updates invoice status (PARTIALLY_PAID / PAID).
+   */
+  public static async recordPayment(
+    userId: string,
+    invoiceId: string,
+    input: CreateInvoicePaymentInput
+  ) {
+    const { businessId } = await resolveActiveMembership(userId);
+
+    return prisma.$transaction(async (tx) => {
+      // Row-lock invoice for payment serialization
+      await tx.$queryRaw`SELECT id FROM "Invoice" WHERE id = ${invoiceId}::uuid FOR UPDATE`;
+
+      const invoice = await tx.invoice.findFirst({
+        where: { id: invoiceId, businessId },
+      });
+
+      if (invoice === null) {
+        throw new NotFoundError("Invoice not found");
+      }
+
+      if (invoice.status === InvoiceStatus.DRAFT) {
+        throw new BadRequestError(
+          "Cannot record payment on a DRAFT invoice. Please issue the invoice before recording payments."
+        );
+      }
+
+      if (
+        invoice.status === InvoiceStatus.CANCELLED ||
+        invoice.status === InvoiceStatus.VOID
+      ) {
+        throw new ConflictError(
+          "Cannot record payment on a cancelled or void invoice."
+        );
+      }
+
+      const currentAmountDue = Number(invoice.amountDue);
+      if (invoice.status === InvoiceStatus.PAID || currentAmountDue <= 0) {
+        throw new ConflictError("Invoice is already fully paid.");
+      }
+
+      if (input.amount > currentAmountDue) {
+        throw new BadRequestError(
+          `Payment amount (${input.amount}) exceeds remaining amount due (${currentAmountDue}).`
+        );
+      }
+
+      const paymentDate = input.paymentDate ?? new Date();
+
+      const payment = await tx.invoicePayment.create({
+        data: {
+          businessId,
+          invoiceId,
+          createdById: userId,
+          amount: input.amount,
+          paymentDate,
+          paymentMethod: input.paymentMethod,
+          referenceNumber: input.referenceNumber ?? null,
+          notes: input.notes ?? null,
+          status: PaymentStatus.COMPLETED,
+        },
+        include: {
+          createdBy: {
+            select: { id: true, firstName: true, lastName: true, email: true },
+          },
+        },
+      });
+
+      // Recalculate invoice totals from all COMPLETED payments
+      const completedPayments = await tx.invoicePayment.findMany({
+        where: { invoiceId, status: PaymentStatus.COMPLETED },
+      });
+
+      const newAmountPaid = round4(
+        completedPayments.reduce((acc, p) => acc + Number(p.amount), 0)
+      );
+      const totalAmount = Number(invoice.totalAmount);
+      const newAmountDue = Math.max(0, round4(totalAmount - newAmountPaid));
+
+      let newStatus: InvoiceStatus = invoice.status;
+      let paidAt: Date | null = invoice.paidAt;
+
+      if (newAmountDue <= 0) {
+        newStatus = InvoiceStatus.PAID;
+        paidAt = paymentDate;
+      } else if (newAmountPaid > 0) {
+        newStatus = InvoiceStatus.PARTIALLY_PAID;
+      }
+
+      await tx.invoice.update({
+        where: { id: invoiceId },
+        data: {
+          amountPaid: newAmountPaid,
+          amountDue: newAmountDue,
+          status: newStatus,
+          paidAt,
+        },
+      });
+
+      await tx.invoiceEvent.create({
+        data: {
+          invoiceId,
+          businessId,
+          eventType: InvoiceEventType.PAYMENT_ADDED,
+          actorUserId: userId,
+          metadata: {
+            paymentId: payment.id,
+            amount: input.amount,
+            paymentMethod: input.paymentMethod,
+            referenceNumber: input.referenceNumber ?? null,
+            newAmountPaid,
+            newAmountDue,
+            status: newStatus,
+          },
+        },
+      });
+
+      return {
+        payment,
+        invoiceSummary: {
+          totalAmount,
+          amountPaid: newAmountPaid,
+          amountDue: newAmountDue,
+          status: newStatus,
+        },
+      };
+    });
+  }
+
+  /**
+   * Updates an existing COMPLETED payment.
+   * Recalculates invoice totals if the amount is modified.
+   */
+  public static async updatePayment(
+    userId: string,
+    invoiceId: string,
+    paymentId: string,
+    input: UpdateInvoicePaymentInput
+  ) {
+    const { businessId } = await resolveActiveMembership(userId);
+
+    return prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM "Invoice" WHERE id = ${invoiceId}::uuid FOR UPDATE`;
+
+      const invoice = await tx.invoice.findFirst({
+        where: { id: invoiceId, businessId },
+      });
+
+      if (invoice === null) {
+        throw new NotFoundError("Invoice not found");
+      }
+
+      const payment = await tx.invoicePayment.findFirst({
+        where: { id: paymentId, invoiceId, businessId },
+      });
+
+      if (payment === null) {
+        throw new NotFoundError("Payment not found");
+      }
+
+      if (payment.status !== PaymentStatus.COMPLETED) {
+        throw new ConflictError(
+          "Only COMPLETED payments can be modified. Refunded or failed payments cannot be updated."
+        );
+      }
+
+      if (input.amount !== undefined) {
+        const otherPayments = await tx.invoicePayment.findMany({
+          where: {
+            invoiceId,
+            status: PaymentStatus.COMPLETED,
+            id: { not: paymentId },
+          },
+        });
+        const otherSum = otherPayments.reduce(
+          (acc, p) => acc + Number(p.amount),
+          0
+        );
+        const totalAmount = Number(invoice.totalAmount);
+        if (otherSum + input.amount > totalAmount) {
+          throw new BadRequestError(
+            `Updated payment amount (${input.amount}) exceeds total invoice amount (${totalAmount}).`
+          );
+        }
+      }
+
+      const updatedPayment = await tx.invoicePayment.update({
+        where: { id: paymentId },
+        data: {
+          ...(input.amount !== undefined && { amount: input.amount }),
+          ...(input.paymentDate !== undefined && {
+            paymentDate: input.paymentDate,
+          }),
+          ...(input.paymentMethod !== undefined && {
+            paymentMethod: input.paymentMethod,
+          }),
+          ...(input.referenceNumber !== undefined && {
+            referenceNumber: input.referenceNumber,
+          }),
+          ...(input.notes !== undefined && { notes: input.notes }),
+        },
+        include: {
+          createdBy: {
+            select: { id: true, firstName: true, lastName: true, email: true },
+          },
+        },
+      });
+
+      if (input.amount !== undefined) {
+        const allCompleted = await tx.invoicePayment.findMany({
+          where: { invoiceId, status: PaymentStatus.COMPLETED },
+        });
+        const newAmountPaid = round4(
+          allCompleted.reduce((acc, p) => acc + Number(p.amount), 0)
+        );
+        const totalAmount = Number(invoice.totalAmount);
+        const newAmountDue = Math.max(0, round4(totalAmount - newAmountPaid));
+
+        let newStatus: InvoiceStatus = invoice.status;
+        let paidAt: Date | null = invoice.paidAt;
+
+        if (newAmountDue <= 0) {
+          newStatus = InvoiceStatus.PAID;
+          paidAt = updatedPayment.paymentDate;
+        } else if (newAmountPaid > 0) {
+          newStatus = InvoiceStatus.PARTIALLY_PAID;
+          paidAt = null;
+        } else {
+          newStatus =
+            invoice.sentAt !== null
+              ? InvoiceStatus.SENT
+              : InvoiceStatus.ISSUED;
+          paidAt = null;
+        }
+
+        await tx.invoice.update({
+          where: { id: invoiceId },
+          data: {
+            amountPaid: newAmountPaid,
+            amountDue: newAmountDue,
+            status: newStatus,
+            paidAt,
+          },
+        });
+      }
+
+      await tx.invoiceEvent.create({
+        data: {
+          invoiceId,
+          businessId,
+          eventType: InvoiceEventType.PAYMENT_UPDATED,
+          actorUserId: userId,
+          metadata: {
+            paymentId,
+            updatedFields: Object.keys(input),
+          },
+        },
+      });
+
+      return updatedPayment;
+    });
+  }
+
+  /**
+   * Reverses/refunds an existing payment.
+   * Updates payment status to REFUNDED and recalculates invoice balances and status.
+   */
+  public static async refundPayment(
+    userId: string,
+    invoiceId: string,
+    paymentId: string,
+    input: RefundPaymentInput
+  ) {
+    const { businessId } = await resolveActiveMembership(userId);
+
+    return prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM "Invoice" WHERE id = ${invoiceId}::uuid FOR UPDATE`;
+
+      const invoice = await tx.invoice.findFirst({
+        where: { id: invoiceId, businessId },
+      });
+
+      if (invoice === null) {
+        throw new NotFoundError("Invoice not found");
+      }
+
+      const payment = await tx.invoicePayment.findFirst({
+        where: { id: paymentId, invoiceId, businessId },
+      });
+
+      if (payment === null) {
+        throw new NotFoundError("Payment not found");
+      }
+
+      if (payment.status === PaymentStatus.REFUNDED) {
+        throw new ConflictError("Payment is already refunded.");
+      }
+
+      const refundReason = input.reason ?? "Refunded by user";
+      const updatedNotes =
+        payment.notes !== null && payment.notes.length > 0
+          ? `${payment.notes} | Refund: ${refundReason}`
+          : `Refund: ${refundReason}`;
+
+      const refundedPayment = await tx.invoicePayment.update({
+        where: { id: paymentId },
+        data: {
+          status: PaymentStatus.REFUNDED,
+          notes: updatedNotes,
+        },
+        include: {
+          createdBy: {
+            select: { id: true, firstName: true, lastName: true, email: true },
+          },
+        },
+      });
+
+      // Recalculate remaining completed payments
+      const remainingCompleted = await tx.invoicePayment.findMany({
+        where: { invoiceId, status: PaymentStatus.COMPLETED },
+      });
+
+      const newAmountPaid = round4(
+        remainingCompleted.reduce((acc, p) => acc + Number(p.amount), 0)
+      );
+      const totalAmount = Number(invoice.totalAmount);
+      const newAmountDue = Math.max(0, round4(totalAmount - newAmountPaid));
+
+      let newStatus: InvoiceStatus = invoice.status;
+      let paidAt: Date | null = invoice.paidAt;
+
+      if (newAmountPaid <= 0) {
+        newStatus =
+          invoice.sentAt !== null
+            ? InvoiceStatus.SENT
+            : InvoiceStatus.ISSUED;
+        paidAt = null;
+      } else if (newAmountPaid < totalAmount) {
+        newStatus = InvoiceStatus.PARTIALLY_PAID;
+        paidAt = null;
+      } else {
+        newStatus = InvoiceStatus.PAID;
+      }
+
+      await tx.invoice.update({
+        where: { id: invoiceId },
+        data: {
+          amountPaid: newAmountPaid,
+          amountDue: newAmountDue,
+          status: newStatus,
+          paidAt,
+        },
+      });
+
+      await tx.invoiceEvent.create({
+        data: {
+          invoiceId,
+          businessId,
+          eventType: InvoiceEventType.PAYMENT_UPDATED,
+          actorUserId: userId,
+          metadata: {
+            action: "REFUNDED",
+            paymentId,
+            refundedAmount: Number(payment.amount),
+            reason: refundReason,
+            newAmountPaid,
+            newAmountDue,
+            status: newStatus,
+          },
+        },
+      });
+
+      return refundedPayment;
+    });
+  }
+
+  /**
+   * Deletes a payment by performing a financial reversal/refund.
+   * Preserves immutable financial audit trails as required by accounting standards.
+   */
+  public static async deletePayment(
+    userId: string,
+    invoiceId: string,
+    paymentId: string
+  ) {
+    return InvoiceService.refundPayment(userId, invoiceId, paymentId, {
+      reason: "Payment reversed via deletion",
+    });
+  }
 }
+
 

@@ -3,6 +3,7 @@ import {
   DiscountType,
   InvoiceDocumentType,
   InvoiceStatus,
+  PaymentMethod,
   ProductType,
 } from "../generated/prisma/enums.js";
 
@@ -257,4 +258,61 @@ export const voidInvoiceSchema = z.object({
 });
 
 export type VoidInvoiceInput = z.infer<typeof voidInvoiceSchema>;
+
+// ============================================================
+// Invoice Payment Schemas
+// ============================================================
+
+export const createInvoicePaymentSchema = z.object({
+  amount: z
+    .number({ message: "Amount must be a number" })
+    .positive("Payment amount must be greater than zero")
+    .max(9_999_999_999_999_999, "Amount exceeds maximum limit"),
+  paymentDate: z.coerce.date().optional(),
+  paymentMethod: z.nativeEnum(PaymentMethod, {
+    message: "Invalid payment method; must be CASH, BANK_TRANSFER, UPI, CARD, CHEQUE, ONLINE, or OTHER",
+  }),
+  referenceNumber: z.string().trim().max(255).nullable().optional(),
+  notes: z.string().trim().max(1000).nullable().optional(),
+});
+
+export type CreateInvoicePaymentInput = z.infer<
+  typeof createInvoicePaymentSchema
+>;
+
+export const updateInvoicePaymentSchema = z.object({
+  amount: z
+    .number({ message: "Amount must be a number" })
+    .positive("Payment amount must be greater than zero")
+    .max(9_999_999_999_999_999)
+    .optional(),
+  paymentDate: z.coerce.date().optional(),
+  paymentMethod: z
+    .nativeEnum(PaymentMethod, {
+      message: "Invalid payment method",
+    })
+    .optional(),
+  referenceNumber: z.string().trim().max(255).nullable().optional(),
+  notes: z.string().trim().max(1000).nullable().optional(),
+});
+
+export type UpdateInvoicePaymentInput = z.infer<
+  typeof updateInvoicePaymentSchema
+>;
+
+export const refundPaymentSchema = z.object({
+  reason: z.string().trim().max(1000).optional(),
+});
+
+export type RefundPaymentInput = z.infer<typeof refundPaymentSchema>;
+
+export const invoicePaymentIdParamSchema = z.object({
+  invoiceId: z.string().uuid("invoiceId must be a valid UUID"),
+  paymentId: z.string().uuid("paymentId must be a valid UUID"),
+});
+
+export type InvoicePaymentIdParam = z.infer<
+  typeof invoicePaymentIdParamSchema
+>;
+
 

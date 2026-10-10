@@ -8,11 +8,15 @@ import {
 } from "../../middlewares/validate.js";
 import {
   cancelInvoiceSchema,
+  createInvoicePaymentSchema,
   createInvoiceSchema,
   invoiceIdParamSchema,
+  invoicePaymentIdParamSchema,
   listInvoicesQuerySchema,
+  refundPaymentSchema,
   sendInvoiceSchema,
   updateInvoiceDraftSchema,
+  updateInvoicePaymentSchema,
   voidInvoiceSchema,
 } from "../../validators/invoice.validator.js";
 
@@ -124,5 +128,48 @@ router.get(
   InvoiceController.getInvoiceEvents
 );
 
+// ============================================================
+// Invoice Payments
+// ============================================================
+
+// GET /api/v1/invoices/:invoiceId/payments
+router.get(
+  "/:invoiceId/payments",
+  validateParams(invoiceIdParamSchema),
+  InvoiceController.listPayments
+);
+
+// POST /api/v1/invoices/:invoiceId/payments
+router.post(
+  "/:invoiceId/payments",
+  validateParams(invoiceIdParamSchema),
+  validateBody(createInvoicePaymentSchema),
+  InvoiceController.recordPayment
+);
+
+// PATCH /api/v1/invoices/:invoiceId/payments/:paymentId
+router.patch(
+  "/:invoiceId/payments/:paymentId",
+  validateParams(invoicePaymentIdParamSchema),
+  validateBody(updateInvoicePaymentSchema),
+  InvoiceController.updatePayment
+);
+
+// POST /api/v1/invoices/:invoiceId/payments/:paymentId/refund
+router.post(
+  "/:invoiceId/payments/:paymentId/refund",
+  validateParams(invoicePaymentIdParamSchema),
+  validateBody(refundPaymentSchema),
+  InvoiceController.refundPayment
+);
+
+// DELETE /api/v1/invoices/:invoiceId/payments/:paymentId
+router.delete(
+  "/:invoiceId/payments/:paymentId",
+  validateParams(invoicePaymentIdParamSchema),
+  InvoiceController.deletePayment
+);
+
 export default router;
+
 
