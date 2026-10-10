@@ -1,0 +1,21 @@
+meta {
+  name: Get Dashboard Stats
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{baseUrl}}/dashboard/stats?period=30d
+  body: none
+  auth: bearer
+}
+
+params:query {
+  period: 30d
+  ~from: 2026-09-01
+  ~to: 2026-10-01
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}

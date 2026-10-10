@@ -6,6 +6,7 @@ import businessRouter from "./business.routes.js";
 import customerRouter from "./customer.routes.js";
 import productRouter from "./product.routes.js";
 import invoiceRouter from "./invoice.routes.js";
+import dashboardRouter from "./dashboard.routes.js";
 
 const router = Router();
 
@@ -17,6 +18,7 @@ router.use("/business", businessRouter);
 router.use("/customers", customerRouter);
 router.use("/products", productRouter);
 router.use("/invoices", invoiceRouter);
+router.use("/dashboard", dashboardRouter);
 
 export default router;
 
