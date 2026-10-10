@@ -1,6 +1,7 @@
 import { prisma } from "../config/prisma.js";
 import { Prisma } from "../generated/prisma/client.js";
 import { SubscriptionStatus } from "../generated/prisma/enums.js";
+import { ForbiddenError } from "../utils/errors.js";
 import {
   DEFAULT_PLANS,
   getDefaultPlanDefinition,
@@ -98,11 +99,11 @@ export class PlanPolicyService {
     );
 
     if (!entitlement.isEnabled) {
-      throw new Error(upgradeMessage);
+      throw new ForbiddenError(upgradeMessage);
     }
 
     if (!entitlement.isUnlimited && currentCount >= entitlement.limit) {
-      throw new Error(upgradeMessage);
+      throw new ForbiddenError(upgradeMessage);
     }
 
     return entitlement;
