@@ -1,0 +1,16 @@
+meta {
+  name: Duplicate Invoice as New Draft
+  type: http
+  seq: 5
+}
+
+post {
+  url: {{baseUrl}}/invoices/{{invoiceId}}/duplicate
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+

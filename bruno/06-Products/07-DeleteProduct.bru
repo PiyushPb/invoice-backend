@@ -1,0 +1,16 @@
+meta {
+  name: Delete Product
+  type: http
+  seq: 7
+}
+
+delete {
+  url: {{baseUrl}}/products/{{productId}}
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+

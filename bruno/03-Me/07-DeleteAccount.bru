@@ -1,0 +1,22 @@
+meta {
+  name: Delete User Account
+  type: http
+  seq: 7
+}
+
+delete {
+  url: {{baseUrl}}/me
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+
+body:json {
+  {
+    "password": "{{password}}"
+  }
+}
+

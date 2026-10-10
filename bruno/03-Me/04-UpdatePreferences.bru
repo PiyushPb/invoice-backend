@@ -1,0 +1,25 @@
+meta {
+  name: Update Preferences
+  type: http
+  seq: 4
+}
+
+patch {
+  url: {{baseUrl}}/me/preferences
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+
+body:json {
+  {
+    "theme": "DARK",
+    "emailNotifications": true,
+    "invoiceAlerts": true,
+    "marketingEmails": false
+  }
+}
+

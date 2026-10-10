@@ -1,0 +1,53 @@
+meta {
+  name: Create Invoice (Draft)
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{baseUrl}}/invoices
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+
+body:json {
+  {
+    "buyerName": "Acme Enterprises",
+    "buyerEmail": "billing@acme.example.com",
+    "dueDate": "2026-11-15T00:00:00.000Z",
+    "items": [
+      {
+        "type": "PRODUCT",
+        "description": "Enterprise Firewall Gateway",
+        "quantity": 2,
+        "unitPrice": 25000,
+        "discountType": "PERCENTAGE",
+        "discountValue": 10,
+        "taxRate": 18
+      },
+      {
+        "type": "SERVICE",
+        "description": "Onsite Professional Installation",
+        "quantity": 1,
+        "unitPrice": 5000,
+        "taxRate": 18
+      }
+    ],
+    "shippingAmount": 500,
+    "notes": "Thank you for your business!"
+  }
+}
+
+script:post-response {
+  if (res.getStatus() === 201) {
+    const data = res.getBody();
+    if (data && data.data && data.data.id) {
+      bru.setVar("invoiceId", data.data.id);
+      bru.setEnvVar("invoiceId", data.data.id);
+    }
+  }
+}

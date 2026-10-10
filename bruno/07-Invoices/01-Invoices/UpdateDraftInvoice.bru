@@ -1,0 +1,22 @@
+meta {
+  name: Update Draft Invoice
+  type: http
+  seq: 4
+}
+
+patch {
+  url: {{baseUrl}}/invoices/{{invoiceId}}
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+
+body:json {
+  {
+    "notes": "Updated delivery schedule and warranty terms."
+  }
+}
+

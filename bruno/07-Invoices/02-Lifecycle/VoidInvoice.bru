@@ -1,0 +1,22 @@
+meta {
+  name: Void Invoice
+  type: http
+  seq: 8
+}
+
+post {
+  url: {{baseUrl}}/invoices/{{invoiceId}}/void
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+
+body:json {
+  {
+    "reason": "Tax assessment correction requested by legal audit"
+  }
+}
+

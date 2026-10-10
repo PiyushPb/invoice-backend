@@ -1,0 +1,16 @@
+meta {
+  name: Archive Customer
+  type: http
+  seq: 5
+}
+
+post {
+  url: {{baseUrl}}/customers/{{customerId}}/archive
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+

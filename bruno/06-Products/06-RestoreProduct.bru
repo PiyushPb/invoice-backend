@@ -1,0 +1,16 @@
+meta {
+  name: Restore Product
+  type: http
+  seq: 6
+}
+
+post {
+  url: {{baseUrl}}/products/{{productId}}/restore
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+

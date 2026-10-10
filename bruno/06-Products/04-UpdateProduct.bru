@@ -1,0 +1,23 @@
+meta {
+  name: Update Product
+  type: http
+  seq: 4
+}
+
+patch {
+  url: {{baseUrl}}/products/{{productId}}
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+
+body:json {
+  {
+    "unitPrice": 28000,
+    "description": "Updated security gateway with firmware 2.0"
+  }
+}
+

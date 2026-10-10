@@ -1,0 +1,16 @@
+meta {
+  name: List Bank Accounts
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{baseUrl}}/business/bank-accounts
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+

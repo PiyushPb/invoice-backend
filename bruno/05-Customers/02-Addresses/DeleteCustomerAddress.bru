@@ -1,0 +1,16 @@
+meta {
+  name: Delete Customer Address
+  type: http
+  seq: 3
+}
+
+delete {
+  url: {{baseUrl}}/customers/{{customerId}}/addresses/{{customerAddressId}}
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+

@@ -1,0 +1,16 @@
+meta {
+  name: Get Customer Invoice History
+  type: http
+  seq: 8
+}
+
+get {
+  url: {{baseUrl}}/customers/{{customerId}}/invoices?page=1&limit=20
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+

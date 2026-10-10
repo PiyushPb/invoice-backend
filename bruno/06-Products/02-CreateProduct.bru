@@ -1,0 +1,38 @@
+meta {
+  name: Create Product / Service
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{baseUrl}}/products
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+
+body:json {
+  {
+    "type": "PRODUCT",
+    "name": "Enterprise Managed Firewall Router",
+    "description": "High-throughput gigabit security gateway with 24/7 SLA",
+    "sku": "NET-FW-100",
+    "hsnCode": "85176290",
+    "unit": "unit",
+    "unitPrice": 25000,
+    "taxRate": 18
+  }
+}
+
+script:post-response {
+  if (res.getStatus() === 201) {
+    const data = res.getBody();
+    if (data && data.data && data.data.id) {
+      bru.setVar("productId", data.data.id);
+      bru.setEnvVar("productId", data.data.id);
+    }
+  }
+}

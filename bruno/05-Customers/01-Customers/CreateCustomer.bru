@@ -1,0 +1,39 @@
+meta {
+  name: Create Customer
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{baseUrl}}/customers
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+
+body:json {
+  {
+    "customerType": "BUSINESS",
+    "displayName": "TechCorp Logistics",
+    "legalName": "TechCorp Logistics Pvt Ltd",
+    "email": "billing@techcorp.example.com",
+    "phone": "+919876501234",
+    "gstin": "27AABCT3518Q1ZV",
+    "pan": "AABCT3518Q",
+    "placeOfSupplyStateCode": "27",
+    "notes": "Key enterprise client with monthly billing cycle"
+  }
+}
+
+script:post-response {
+  if (res.getStatus() === 201) {
+    const data = res.getBody();
+    if (data && data.data && data.data.id) {
+      bru.setVar("customerId", data.data.id);
+      bru.setEnvVar("customerId", data.data.id);
+    }
+  }
+}

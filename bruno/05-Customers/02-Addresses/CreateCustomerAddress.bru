@@ -1,0 +1,38 @@
+meta {
+  name: Create Customer Address
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{baseUrl}}/customers/{{customerId}}/addresses
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+
+body:json {
+  {
+    "type": "BILLING",
+    "addressLine1": "123 Marine Drive, Nariman Point",
+    "city": "Mumbai",
+    "state": "Maharashtra",
+    "stateCode": "27",
+    "postalCode": "400021",
+    "countryCode": "IN",
+    "isPrimary": true
+  }
+}
+
+script:post-response {
+  if (res.getStatus() === 201) {
+    const data = res.getBody();
+    if (data && data.data && data.data.id) {
+      bru.setVar("customerAddressId", data.data.id);
+      bru.setEnvVar("customerAddressId", data.data.id);
+    }
+  }
+}

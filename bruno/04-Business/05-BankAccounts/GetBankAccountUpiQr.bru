@@ -1,0 +1,16 @@
+meta {
+  name: Get Bank Account UPI QR
+  type: http
+  seq: 5
+}
+
+get {
+  url: {{baseUrl}}/business/bank-accounts/{{bankAccountId}}/upi-qr?amount=5000
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+

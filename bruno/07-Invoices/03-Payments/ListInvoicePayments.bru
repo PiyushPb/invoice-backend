@@ -1,0 +1,16 @@
+meta {
+  name: List Invoice Payments
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{baseUrl}}/invoices/{{invoiceId}}/payments
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+

@@ -1,0 +1,24 @@
+meta {
+  name: Update Address
+  type: http
+  seq: 3
+}
+
+patch {
+  url: {{baseUrl}}/business/addresses/{{addressId}}
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+
+body:json {
+  {
+    "addressLine1": "123 Tech Park, 5th Floor",
+    "city": "Bengaluru",
+    "postalCode": "560103"
+  }
+}
+

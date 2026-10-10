@@ -1,0 +1,28 @@
+meta {
+  name: Update Tax Profile
+  type: http
+  seq: 2
+}
+
+patch {
+  url: {{baseUrl}}/business/tax-profile
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+
+body:json {
+  {
+    "gstin": "29ABCDE1234F1Z5",
+    "pan": "ABCDE1234F",
+    "legalTradeName": "Acme Global Solutions",
+    "stateCode": "29",
+    "stateName": "Karnataka",
+    "gstRegistrationType": "REGULAR",
+    "compositionScheme": false
+  }
+}
+

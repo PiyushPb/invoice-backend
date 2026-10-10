@@ -1,0 +1,22 @@
+meta {
+  name: Cancel Invoice
+  type: http
+  seq: 7
+}
+
+post {
+  url: {{baseUrl}}/invoices/{{invoiceId}}/cancel
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+
+body:json {
+  {
+    "reason": "Customer requested order cancellation prior to dispatch"
+  }
+}
+

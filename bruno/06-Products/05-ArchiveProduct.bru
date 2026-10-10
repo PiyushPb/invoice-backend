@@ -1,0 +1,16 @@
+meta {
+  name: Archive Product
+  type: http
+  seq: 5
+}
+
+post {
+  url: {{baseUrl}}/products/{{productId}}/archive
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+

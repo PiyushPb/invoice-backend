@@ -1,0 +1,16 @@
+meta {
+  name: Get Business Details
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{baseUrl}}/business
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+

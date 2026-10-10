@@ -1,0 +1,26 @@
+meta {
+  name: Update Business Profile
+  type: http
+  seq: 2
+}
+
+patch {
+  url: {{baseUrl}}/business
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+
+body:json {
+  {
+    "name": "Acme Global Solutions Pvt Ltd",
+    "legalName": "Acme Global Solutions Private Limited",
+    "email": "contact@acmeglobal.com",
+    "phone": "+919876543210",
+    "website": "https://acmeglobal.com"
+  }
+}
+

@@ -1,0 +1,16 @@
+meta {
+  name: Generate Invoice PDF
+  type: http
+  seq: 3
+}
+
+post {
+  url: {{baseUrl}}/invoices/{{invoiceId}}/pdf
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+

@@ -1,0 +1,39 @@
+meta {
+  name: Create Address
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{baseUrl}}/business/addresses
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+
+body:json {
+  {
+    "type": "REGISTERED",
+    "addressLine1": "123 Tech Park, 4th Floor",
+    "addressLine2": "Outer Ring Road",
+    "city": "Bengaluru",
+    "state": "Karnataka",
+    "stateCode": "29",
+    "postalCode": "560103",
+    "countryCode": "IN",
+    "isPrimary": true
+  }
+}
+
+script:post-response {
+  if (res.getStatus() === 201) {
+    const data = res.getBody();
+    if (data && data.data && data.data.id) {
+      bru.setVar("addressId", data.data.id);
+      bru.setEnvVar("addressId", data.data.id);
+    }
+  }
+}

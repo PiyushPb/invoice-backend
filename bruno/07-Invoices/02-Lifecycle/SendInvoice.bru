@@ -1,0 +1,24 @@
+meta {
+  name: Send Invoice via Email
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{baseUrl}}/invoices/{{invoiceId}}/send
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+
+body:json {
+  {
+    "email": "billing@acme.example.com",
+    "subject": "Invoice {{invoiceNumber}} from Acme Global Solutions",
+    "message": "Please find your attached tax invoice for services rendered."
+  }
+}
+

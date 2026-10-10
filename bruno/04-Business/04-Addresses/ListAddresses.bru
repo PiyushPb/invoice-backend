@@ -1,0 +1,16 @@
+meta {
+  name: List Business Addresses
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{baseUrl}}/business/addresses
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+

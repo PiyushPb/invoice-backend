@@ -1,0 +1,23 @@
+meta {
+  name: Refund Payment
+  type: http
+  seq: 4
+}
+
+post {
+  url: {{baseUrl}}/invoices/{{invoiceId}}/payments/{{paymentId}}/refund
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+
+body:json {
+  {
+    "amount": 2000,
+    "reason": "Partial refund due to returned equipment"
+  }
+}
+

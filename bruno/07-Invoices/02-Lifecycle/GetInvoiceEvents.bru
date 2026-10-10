@@ -1,0 +1,16 @@
+meta {
+  name: Get Invoice Audit Events
+  type: http
+  seq: 6
+}
+
+get {
+  url: {{baseUrl}}/invoices/{{invoiceId}}/events
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+

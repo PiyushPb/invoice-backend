@@ -1,0 +1,23 @@
+meta {
+  name: Update Bank Account
+  type: http
+  seq: 3
+}
+
+patch {
+  url: {{baseUrl}}/business/bank-accounts/{{bankAccountId}}
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+
+body:json {
+  {
+    "upiId": "acmepay@hdfcbank",
+    "branchName": "Koramangala"
+  }
+}
+

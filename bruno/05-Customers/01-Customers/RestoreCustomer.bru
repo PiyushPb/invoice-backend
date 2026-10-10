@@ -1,0 +1,16 @@
+meta {
+  name: Restore Customer
+  type: http
+  seq: 6
+}
+
+post {
+  url: {{baseUrl}}/customers/{{customerId}}/restore
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+

@@ -1,0 +1,16 @@
+meta {
+  name: Remove Team Member
+  type: http
+  seq: 4
+}
+
+delete {
+  url: {{baseUrl}}/business/members/{{memberId}}
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+

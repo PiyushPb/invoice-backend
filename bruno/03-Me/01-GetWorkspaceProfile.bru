@@ -1,0 +1,16 @@
+meta {
+  name: Get Workspace Profile
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{baseUrl}}/me
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+

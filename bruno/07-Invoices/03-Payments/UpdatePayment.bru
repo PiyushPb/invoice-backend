@@ -1,0 +1,23 @@
+meta {
+  name: Update Payment Notes / Method
+  type: http
+  seq: 3
+}
+
+patch {
+  url: {{baseUrl}}/invoices/{{invoiceId}}/payments/{{paymentId}}
+  body: json
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+
+body:json {
+  {
+    "notes": "Verified payment in bank statement",
+    "referenceNumber": "BANK-REF-123456"
+  }
+}
+

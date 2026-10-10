@@ -1,0 +1,16 @@
+meta {
+  name: Get Tax Profile
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{baseUrl}}/business/tax-profile
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+

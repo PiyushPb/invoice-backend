@@ -1,0 +1,15 @@
+meta {
+  name: Get Feature Entitlements
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{baseUrl}}/entitlements
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}

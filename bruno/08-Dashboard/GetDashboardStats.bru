@@ -1,0 +1,16 @@
+meta {
+  name: Get Dashboard Stats
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{baseUrl}}/dashboard/stats?period=30d
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+

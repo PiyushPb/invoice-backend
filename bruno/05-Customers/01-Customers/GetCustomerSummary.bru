@@ -1,0 +1,16 @@
+meta {
+  name: Get Customer Summary
+  type: http
+  seq: 7
+}
+
+get {
+  url: {{baseUrl}}/customers/{{customerId}}/summary
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+

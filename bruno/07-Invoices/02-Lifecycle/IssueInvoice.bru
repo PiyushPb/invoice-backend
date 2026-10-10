@@ -1,0 +1,16 @@
+meta {
+  name: Issue Invoice (Lock Financials)
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{baseUrl}}/invoices/{{invoiceId}}/issue
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+
